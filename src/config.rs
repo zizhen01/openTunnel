@@ -1,5 +1,4 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use anyhow::{bail, Context};
@@ -81,10 +80,24 @@ pub fn save_api_config(config: &ApiConfig) -> Result<()> {
     let json = serde_json::to_string_pretty(config)?;
     fs::write(&path, &json).with_context(|| format!("failed to write {}", path.display()))?;
 
+    set_api_config_permissions(&path)?;
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_api_config_permissions(path: &std::path::Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
     // Secure the file: owner read/write only
     let perms = fs::Permissions::from_mode(0o600);
-    fs::set_permissions(&path, perms)?;
+    fs::set_permissions(path, perms)?;
+    Ok(())
+}
 
+#[cfg(not(unix))]
+fn set_api_config_permissions(_path: &std::path::Path) -> Result<()> {
+    // Windows and other non-Unix platforms do not support Unix mode bits.
     Ok(())
 }
 
