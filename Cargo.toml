@@ -32,7 +32,8 @@ version = "0.9"
 # HTTP client
 [dependencies.reqwest]
 version = "0.12"
-features = ["json"]
+default-features = false
+features = ["json", "rustls-tls"]
 
 [dependencies.tokio]
 version = "1"
