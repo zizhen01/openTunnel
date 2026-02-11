@@ -1,0 +1,281 @@
+use colored::Colorize;
+use comfy_table::{presets::UTF8_FULL, Table};
+
+use crate::client::{CloudflareClient, CreateDnsRecord};
+use crate::config;
+use crate::error::Result;
+use crate::i18n::lang;
+use crate::prompt;
+use crate::t;
+
+fn short_id(id: &str) -> String {
+    id.chars().take(8).collect()
+}
+
+// ---------------------------------------------------------------------------
+// List DNS records
+// ---------------------------------------------------------------------------
+
+/// Display all DNS records for the configured zone.
+pub async fn list_records(client: &CloudflareClient) -> Result<()> {
+    let l = lang();
+    println!(
+        "{}",
+        t!(l, "Fetching DNS records...", "获取 DNS 记录...").bold()
+    );
+
+    let records = client.list_dns_records().await?;
+
+    if records.is_empty() {
+        println!("{}", t!(l, "No DNS records found.", "未找到 DNS 记录。"));
+        return Ok(());
+    }
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        t!(l, "Name", "名称"),
+        t!(l, "Type", "类型"),
+        t!(l, "Content", "内容"),
+        t!(l, "Proxied", "代理"),
+        "ID",
+    ]);
+
+    for r in &records {
+        let proxied_str = match r.proxied {
+            Some(true) => "🟠 yes",
+            Some(false) => "⚪ no",
+            None => "-",
+        };
+        table.add_row(vec![
+            &r.name,
+            &r.record_type,
+            &r.content,
+            proxied_str,
+            &short_id(&r.id),
+        ]);
+    }
+
+    println!("{table}");
+    println!(
+        "\n{} {}",
+        t!(l, "Total:", "共:"),
+        records.len().to_string().cyan()
+    );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Add DNS record
+// ---------------------------------------------------------------------------
+
+/// Add a new DNS record, with optional interactive prompts.
+pub async fn add_record(
+    client: &CloudflareClient,
+    name: Option<String>,
+    record_type: Option<String>,
+    content: Option<String>,
+    proxied: bool,
+) -> Result<()> {
+    let l = lang();
+
+    let name = match name {
+        Some(n) => n,
+        None => match prompt::input_opt(
+            t!(l, "Record name (e.g. app)", "记录名 (如 app)"),
+            false,
+            None,
+        ) {
+            Some(v) => v,
+            None => return Ok(()),
+        },
+    };
+
+    let record_type = match record_type {
+        Some(rt) => rt.to_uppercase(),
+        None => {
+            let types = vec!["CNAME", "A", "AAAA", "TXT", "MX"];
+            let sel = prompt::select_opt(t!(l, "Record type", "记录类型"), &types, Some(0));
+            let sel = sel.unwrap_or(0);
+            types.get(sel).unwrap_or(&"CNAME").to_string()
+        }
+    };
+
+    let content = match content {
+        Some(c) => c,
+        None => match prompt::input_opt(t!(l, "Record content / target", "记录内容"), false, None)
+        {
+            Some(v) => v,
+            None => return Ok(()),
+        },
+    };
+
+    let record = CreateDnsRecord {
+        record_type: record_type.clone(),
+        name: name.clone(),
+        content: content.clone(),
+        proxied,
+        ttl: None,
+    };
+
+    println!(
+        "{}",
+        t!(l, "Creating DNS record...", "正在创建 DNS 记录...").bold()
+    );
+    let created = client.create_dns_record(&record).await?;
+
+    println!(
+        "{} {} {} → {} (ID: {})",
+        "✅".green(),
+        record_type,
+        created.name.cyan(),
+        content,
+        short_id(&created.id)
+    );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Delete DNS record
+// ---------------------------------------------------------------------------
+
+/// Delete a DNS record. If `id` is None, show interactive picker.
+pub async fn delete_record(client: &CloudflareClient, id: Option<String>) -> Result<()> {
+    let l = lang();
+
+    let record_id = match id {
+        Some(id) => id,
+        None => {
+            let records = client.list_dns_records().await?;
+            if records.is_empty() {
+                println!(
+                    "{}",
+                    t!(l, "No DNS records to delete.", "没有可删除的 DNS 记录。")
+                );
+                return Ok(());
+            }
+            let items: Vec<String> = records
+                .iter()
+                .map(|r| format!("{} {} → {}", r.record_type, r.name, r.content))
+                .collect();
+
+            let sel = prompt::select_opt(
+                t!(l, "Select record to delete", "选择要删除的记录"),
+                &items,
+                None,
+            );
+
+            match sel {
+                Some(i) => match records.get(i) {
+                    Some(record) => record.id.clone(),
+                    None => return Ok(()),
+                },
+                None => return Ok(()),
+            }
+        }
+    };
+
+    let confirmed = prompt::confirm_opt(
+        t!(
+            l,
+            "Are you sure you want to delete this record?",
+            "确认删除该记录?"
+        ),
+        false,
+    )
+    .unwrap_or(false);
+
+    if !confirmed {
+        return Ok(());
+    }
+
+    client.delete_dns_record(&record_id).await?;
+    println!(
+        "{} {}",
+        "✅".green(),
+        t!(l, "DNS record deleted.", "DNS 记录已删除。")
+    );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Sync tunnel routes → DNS
+// ---------------------------------------------------------------------------
+
+/// For each hostname in the tunnel config, ensure a CNAME record pointing to
+/// the tunnel exists.
+pub async fn sync_tunnel_routes(client: &CloudflareClient) -> Result<()> {
+    let l = lang();
+    let cfg = config::load_tunnel_config()?;
+    let hostnames = config::configured_hostnames(&cfg);
+
+    if hostnames.is_empty() {
+        println!(
+            "{}",
+            t!(
+                l,
+                "No hostnames configured in tunnel config.",
+                "隧道配置中没有域名映射。"
+            )
+        );
+        return Ok(());
+    }
+
+    let tunnel_cname = format!("{}.cfargotunnel.com", cfg.tunnel);
+
+    println!(
+        "{} {} {} ...",
+        "🔄".cyan(),
+        t!(l, "Syncing", "同步中"),
+        hostnames.len()
+    );
+
+    let existing = client.list_dns_records().await.unwrap_or_default();
+
+    let mut created = 0u32;
+    let mut skipped = 0u32;
+
+    for hostname in &hostnames {
+        // Check if record already exists
+        let exists = existing
+            .iter()
+            .any(|r| r.name == *hostname && r.record_type == "CNAME");
+
+        if exists {
+            println!(
+                "  ⏭️ {} {}",
+                hostname,
+                t!(l, "(already exists)", "(已存在)")
+            );
+            skipped += 1;
+            continue;
+        }
+
+        let record = CreateDnsRecord {
+            record_type: "CNAME".to_string(),
+            name: hostname.clone(),
+            content: tunnel_cname.clone(),
+            proxied: true,
+            ttl: None,
+        };
+
+        match client.create_dns_record(&record).await {
+            Ok(_) => {
+                println!("  {} {} → {}", "✅".green(), hostname, tunnel_cname);
+                created += 1;
+            }
+            Err(e) => {
+                println!("  {} {} — {}", "❌".red(), hostname, e);
+            }
+        }
+    }
+
+    println!(
+        "\n📊 {} {}, {} {}",
+        created,
+        t!(l, "created", "已创建"),
+        skipped,
+        t!(l, "skipped", "已跳过")
+    );
+    Ok(())
+}

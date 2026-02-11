@@ -1,32 +1,70 @@
 [package]
-name = "cft"
-version = "3.0.0"
+name = "opentunnel"
+version = "0.1.0"
 edition = "2021"
-authors = ["Your Name"]
-description = "Enhanced Cloudflare Tunnel & API Manager"
+authors = ["openTunnel Contributors"]
+description = "An open-source CLI for managing Cloudflare Tunnels, DNS, Zero Trust Access & monitoring"
+license = "MIT"
+repository = "https://github.com/user/openTunnel"
 
-[dependencies]
-# CLI 框架
-clap = { version = "4", features = ["derive"] }
-dialoguer = "0.11"
-colored = "2"
+# CLI framework
+[dependencies.clap]
+version = "4"
+features = ["derive"]
 
-# 序列化
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-serde_yaml = "0.9"
+[dependencies.dialoguer]
+version = "0.11"
 
-# HTTP 客户端
-reqwest = { version = "0.11", features = ["json"] }
-tokio = { version = "1", features = ["full"] }
+[dependencies.colored]
+version = "2"
 
-# 表格显示
-comfy-table = "7"
+# Serialization
+[dependencies.serde]
+version = "1"
+features = ["derive"]
 
-# 其他工具
-chrono = "0.4"
-anyhow = "1"
+[dependencies.serde_json]
+version = "1"
+
+[dependencies.serde_yaml]
+version = "0.9"
+
+# HTTP client
+[dependencies.reqwest]
+version = "0.12"
+features = ["json"]
+
+[dependencies.tokio]
+version = "1"
+features = ["full"]
+
+# Table display
+[dependencies.comfy-table]
+version = "7"
+
+# Error handling
+[dependencies.anyhow]
+version = "1"
+
+[dependencies.thiserror]
+version = "2"
+
+# Utilities
+[dependencies.chrono]
+version = "0.4"
+
+[dependencies.dirs]
+version = "6"
+
+[dependencies.ctrlc]
+version = "3"
+
+[dependencies.base64]
+version = "0.22"
+
+[dependencies.rand]
+version = "0.9"
 
 [[bin]]
-name = "cft"
+name = "tunnel"
 path = "src/main.rs"
