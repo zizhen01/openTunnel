@@ -1,0 +1,6 @@
+● cloudflared-tunnel.service - Cloudflare Tunnel (Custom Setup)
+     Loaded: loaded (]8;;file://cloudgcp/etc/systemd/system/cloudflared-tunnel.service/etc/systemd/system/cloudflared-tunnel.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: activating (auto-restart) since Wed 2026-02-11 10:52:28 UTC; 3s ago
+    Process: 1147460 ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel run --config /etc/cloudflared/config.yml (code=exited, status=0/SUCCESS)
+   Main PID: 1147460 (code=exited, status=0/SUCCESS)
+        CPU: 122ms
