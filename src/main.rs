@@ -9,13 +9,14 @@ mod menu;
 mod monitor;
 mod prompt;
 mod scan;
+mod service;
 mod tools;
 mod tunnel;
 
 use clap::Parser;
 use colored::Colorize;
 
-use cli::{AccessAction, AccountAction, Cli, Commands, ConfigAction, DnsAction};
+use cli::{AccessAction, AccountAction, Cli, Commands, ConfigAction, DnsAction, ServiceAction};
 use error::Result;
 use i18n::lang;
 
@@ -198,6 +199,17 @@ async fn run(cli: Cli) -> Result<()> {
 
         // Smart features
         Some(Commands::Scan { ports, timeout }) => scan::scan_local_services(ports, timeout).await,
+        Some(Commands::Service { action }) => match action {
+            ServiceAction::Status => service::status().await,
+            ServiceAction::Install { tunnel } => {
+                let client = require_client()?;
+                service::install(&client, tunnel).await
+            }
+            ServiceAction::Start => service::start(),
+            ServiceAction::Stop => service::stop(),
+            ServiceAction::Restart => service::restart(),
+            ServiceAction::Logs { lines } => service::logs(lines),
+        },
     }
 }
 

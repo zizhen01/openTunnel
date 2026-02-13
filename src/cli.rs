@@ -95,6 +95,11 @@ pub enum Commands {
         #[arg(long, default_value = "500")]
         timeout: u64,
     },
+    /// Manage cloudflared service / 管理 cloudflared 服务
+    Service {
+        #[command(subcommand)]
+        action: ServiceAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -183,5 +188,29 @@ pub enum AccountAction {
     Set {
         /// Account ID to set (optional)
         id: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ServiceAction {
+    /// Show service status / 查看服务状态
+    Status,
+    /// Install service for a tunnel / 为隧道安装服务
+    Install {
+        /// Tunnel ID (interactive if omitted)
+        #[arg(long)]
+        tunnel: Option<String>,
+    },
+    /// Start service / 启动服务
+    Start,
+    /// Stop service / 停止服务
+    Stop,
+    /// Restart service / 重启服务
+    Restart,
+    /// Show recent logs / 查看最近日志
+    Logs {
+        /// Number of lines
+        #[arg(long, default_value = "100")]
+        lines: usize,
     },
 }

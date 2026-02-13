@@ -1,6 +1,6 @@
 [package]
 name = "opentunnel"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["openTunnel Contributors"]
 description = "An open-source CLI for managing Cloudflare Tunnels, DNS, Zero Trust Access & monitoring"

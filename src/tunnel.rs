@@ -7,6 +7,7 @@ use crate::client::{CloudflareClient, IngressRule, TunnelConfigInner, TunnelConf
 use crate::error::Result;
 use crate::i18n::lang;
 use crate::prompt;
+use crate::service;
 use crate::t;
 
 fn short_id(id: &str) -> String {
@@ -23,6 +24,40 @@ fn format_time(ts: Option<&str>) -> String {
         Some(s) => s.to_string(),
         None => "-".to_string(),
     }
+}
+
+fn normalize_service_input(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+
+    if trimmed.starts_with("http://")
+        || trimmed.starts_with("https://")
+        || trimmed.starts_with("http_status:")
+        || trimmed.starts_with("unix:")
+        || trimmed.starts_with("ssh://")
+        || trimmed.starts_with("rdp://")
+        || trimmed.starts_with("tcp://")
+    {
+        return trimmed.to_string();
+    }
+
+    if trimmed.chars().all(|c| c.is_ascii_digit()) {
+        return format!("http://localhost:{trimmed}");
+    }
+
+    if let Some((host, port)) = trimmed.rsplit_once(':') {
+        if !host.is_empty()
+            && port.chars().all(|c| c.is_ascii_digit())
+            && !host.contains("://")
+            && !host.starts_with('/')
+        {
+            return format!("http://{trimmed}");
+        }
+    }
+
+    trimmed.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -132,17 +167,89 @@ pub async fn create_tunnel(client: &CloudflareClient, name: Option<String>) -> R
         tunnel.id
     );
 
-    // Show the run token
-    println!(
-        "\n{}",
-        t!(l, "To run this tunnel, use:", "运行此隧道，请使用:").bold()
-    );
-    match client.get_tunnel_token(&tunnel.id).await {
-        Ok(token) => println!("  cloudflared tunnel run --token {}", token),
-        Err(_) => println!(
-            "  cloudflared tunnel run --token $(tunnel token {})",
-            short_id(&tunnel.id)
+    let takeover = prompt::confirm_opt(
+        t!(
+            l,
+            "Manage this tunnel in background now (install + start service)?",
+            "现在由程序接管后台运行该隧道（安装并启动服务）？"
         ),
+        true,
+    )
+    .unwrap_or(false);
+
+    if takeover {
+        println!(
+            "{}",
+            t!(
+                l,
+                "⚙️ Applying service management...",
+                "⚙️ 正在应用服务托管..."
+            )
+            .bold()
+        );
+
+        match service::install(client, Some(tunnel.id.clone())).await {
+            Ok(_) => match service::start() {
+                Ok(_) => {
+                    println!(
+                        "{} {}",
+                        "✅".green(),
+                        t!(
+                            l,
+                            "Background service is running. Tunnel should become active shortly.",
+                            "后台服务已启动，隧道应很快变为 active。"
+                        )
+                    );
+                }
+                Err(e) => {
+                    println!("{} {:#}", "⚠️".yellow(), e);
+                    println!(
+                        "{}",
+                        t!(
+                            l,
+                            "Service installed, but start failed. You can retry:",
+                            "服务已安装，但启动失败。可手动重试："
+                        )
+                        .yellow()
+                    );
+                    println!("  tunnel service start");
+                }
+            },
+            Err(e) => {
+                println!("{} {:#}", "⚠️".yellow(), e);
+                println!(
+                    "{}",
+                    t!(
+                        l,
+                        "Automatic background management failed. Run manually:",
+                        "自动后台托管失败。请手动执行："
+                    )
+                    .yellow()
+                );
+                println!("  tunnel service install --tunnel {}", tunnel.id);
+                println!("  tunnel service start");
+            }
+        }
+    } else {
+        println!(
+            "\n{}",
+            t!(
+                l,
+                "To run this tunnel in background via program, use:",
+                "若要由程序后台托管运行，请执行："
+            )
+            .bold()
+        );
+        println!("  tunnel service install --tunnel {}", tunnel.id);
+        println!("  tunnel service start");
+        println!(
+            "  {}",
+            t!(
+                l,
+                "Or fetch token manually only when needed: `tunnel token <id>`",
+                "或仅在需要时手动取 token：`tunnel token <id>`"
+            )
+        );
     }
 
     Ok(())
@@ -335,7 +442,7 @@ pub async fn add_mapping(
         },
     };
 
-    let service = match service {
+    let raw_service = match service {
         Some(s) => s,
         None => match prompt::input_opt(
             t!(
@@ -350,6 +457,19 @@ pub async fn add_mapping(
             None => return Ok(()),
         },
     };
+    let service = normalize_service_input(&raw_service);
+    if service != raw_service {
+        println!(
+            "{} {} {}",
+            "ℹ️".cyan(),
+            t!(
+                l,
+                "Normalized service target to:",
+                "已自动规范化服务地址为:"
+            ),
+            service
+        );
+    }
 
     // Fetch current config
     let mut config = client

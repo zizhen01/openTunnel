@@ -4,7 +4,7 @@ use crate::client::{CloudflareClient, TokenVerifyStatus};
 use crate::config;
 use crate::error::Result;
 use crate::i18n::lang;
-use crate::{access, dns, monitor, prompt, scan, t, tools, tunnel};
+use crate::{access, dns, monitor, prompt, scan, service, t, tools, tunnel};
 
 // ---------------------------------------------------------------------------
 // Main interactive menu
@@ -95,7 +95,7 @@ pub async fn run_config_set_wizard() -> Result<()> {
 
 fn print_banner() {
     println!("\n{}", "═".repeat(60).cyan());
-    println!("{}", "  🌩️  openTunnel v0.1.4".bold().cyan());
+    println!("{}", "  🌩️  openTunnel v0.1.5".bold().cyan());
     println!("{}", "═".repeat(60).cyan());
 }
 
@@ -169,6 +169,7 @@ async fn tunnel_menu() -> Result<()> {
         t!(l, "📋 Show mappings", "📋 查看当前映射"),
         t!(l, "➕ Add domain mapping", "➕ 添加域名映射"),
         t!(l, "➖ Remove domain mapping", "➖ 移除域名映射"),
+        t!(l, "⚙️ Manage tunnel service", "⚙️ 管理隧道服务"),
         t!(l, "◀️  Back", "◀️  返回主菜单"),
     ];
 
@@ -210,7 +211,42 @@ async fn tunnel_menu() -> Result<()> {
                 tunnel::remove_mapping(&client, None, None).await?;
             }
         }
-        Some(7) | None => {}
+        Some(7) => tunnel_service_menu().await?,
+        Some(8) | None => {}
+        _ => {}
+    }
+    Ok(())
+}
+
+async fn tunnel_service_menu() -> Result<()> {
+    let l = lang();
+    let options = vec![
+        t!(l, "🔎 Service status", "🔎 服务状态"),
+        t!(
+            l,
+            "📦 Install service (with tunnel token)",
+            "📦 安装服务 (携带隧道 Token)"
+        ),
+        t!(l, "▶️ Start service", "▶️ 启动服务"),
+        t!(l, "⏹ Stop service", "⏹ 停止服务"),
+        t!(l, "🔄 Restart service", "🔄 重启服务"),
+        t!(l, "📜 Show logs", "📜 查看日志"),
+        t!(l, "◀️  Back", "◀️  返回"),
+    ];
+
+    let sel = prompt::select_opt(t!(l, "Tunnel Service", "隧道服务"), &options, None);
+    match sel {
+        Some(0) => service::status().await?,
+        Some(1) => {
+            if let Some(client) = try_build_client() {
+                service::install(&client, None).await?;
+            }
+        }
+        Some(2) => service::start()?,
+        Some(3) => service::stop()?,
+        Some(4) => service::restart()?,
+        Some(5) => service::logs(100)?,
+        Some(6) | None => {}
         _ => {}
     }
     Ok(())
