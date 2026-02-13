@@ -26,9 +26,6 @@ features = ["derive"]
 [dependencies.serde_json]
 version = "1"
 
-[dependencies.serde_yaml]
-version = "0.9"
-
 # HTTP client
 [dependencies.reqwest]
 version = "0.12"

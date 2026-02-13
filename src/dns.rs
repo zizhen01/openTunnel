@@ -2,14 +2,22 @@ use colored::Colorize;
 use comfy_table::{presets::UTF8_FULL, Table};
 
 use crate::client::{CloudflareClient, CreateDnsRecord};
-use crate::config;
 use crate::error::Result;
 use crate::i18n::lang;
 use crate::prompt;
 use crate::t;
+use crate::tunnel;
 
 fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        s.chars().take(max - 2).collect::<String>() + ".."
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -37,23 +45,17 @@ pub async fn list_records(client: &CloudflareClient) -> Result<()> {
         t!(l, "Name", "名称"),
         t!(l, "Type", "类型"),
         t!(l, "Content", "内容"),
-        t!(l, "Proxied", "代理"),
-        "ID",
+        t!(l, "Proxy", "代理"),
     ]);
 
     for r in &records {
         let proxied_str = match r.proxied {
-            Some(true) => "🟠 yes",
-            Some(false) => "⚪ no",
+            Some(true) => "🟠",
+            Some(false) => "⚪",
             None => "-",
         };
-        table.add_row(vec![
-            &r.name,
-            &r.record_type,
-            &r.content,
-            proxied_str,
-            &short_id(&r.id),
-        ]);
+        let content = truncate(&r.content, 30);
+        table.add_row(vec![&r.name, &r.record_type, &content, proxied_str]);
     }
 
     println!("{table}");
@@ -199,15 +201,32 @@ pub async fn delete_record(client: &CloudflareClient, id: Option<String>) -> Res
 }
 
 // ---------------------------------------------------------------------------
-// Sync tunnel routes → DNS
+// Sync tunnel routes → DNS (via remotely-managed tunnel config API)
 // ---------------------------------------------------------------------------
 
-/// For each hostname in the tunnel config, ensure a CNAME record pointing to
-/// the tunnel exists.
-pub async fn sync_tunnel_routes(client: &CloudflareClient) -> Result<()> {
+/// For each hostname in the tunnel's remote config, ensure a CNAME record
+/// pointing to the tunnel exists.
+pub async fn sync_tunnel_routes(
+    client: &CloudflareClient,
+    tunnel_id: Option<String>,
+) -> Result<()> {
     let l = lang();
-    let cfg = config::load_tunnel_config()?;
-    let hostnames = config::configured_hostnames(&cfg);
+
+    let tunnel_id = match tunnel_id {
+        Some(id) => id,
+        None => match tunnel::select_tunnel(client).await? {
+            Some(t) => t.id,
+            None => return Ok(()),
+        },
+    };
+
+    let config = client.get_tunnel_config(&tunnel_id).await?;
+    let hostnames: Vec<String> = config
+        .config
+        .ingress
+        .iter()
+        .filter_map(|r| r.hostname.clone())
+        .collect();
 
     if hostnames.is_empty() {
         println!(
@@ -221,7 +240,7 @@ pub async fn sync_tunnel_routes(client: &CloudflareClient) -> Result<()> {
         return Ok(());
     }
 
-    let tunnel_cname = format!("{}.cfargotunnel.com", cfg.tunnel);
+    let tunnel_cname = format!("{}.cfargotunnel.com", tunnel_id);
 
     println!(
         "{} {} {} ...",
@@ -236,7 +255,6 @@ pub async fn sync_tunnel_routes(client: &CloudflareClient) -> Result<()> {
     let mut skipped = 0u32;
 
     for hostname in &hostnames {
-        // Check if record already exists
         let exists = existing
             .iter()
             .any(|r| r.name == *hostname && r.record_type == "CNAME");

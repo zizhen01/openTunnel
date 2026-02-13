@@ -13,15 +13,6 @@ pub enum CftError {
     #[error("Cloudflare API error: {message} (code {code})")]
     CloudflareApi { code: u32, message: String },
 
-    #[error("Tunnel config not found at {path}")]
-    ConfigNotFound { path: String },
-
-    #[error("cloudflared is not installed or not in PATH")]
-    CloudflaredNotFound,
-
-    #[error("Service operation failed: {0}")]
-    ServiceError(String),
-
     #[error("User cancelled the operation")]
     Cancelled,
 

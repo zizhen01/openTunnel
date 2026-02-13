@@ -51,6 +51,47 @@ pub struct Tunnel {
     pub status: Option<String>,
 }
 
+/// Remotely-managed tunnel configuration (ingress rules).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TunnelConfiguration {
+    pub config: TunnelConfigInner,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TunnelConfigInner {
+    pub ingress: Vec<IngressRule>,
+}
+
+/// A single ingress rule in a remotely-managed tunnel.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct IngressRule {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+    pub service: String,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "originRequest")]
+    pub origin_request: Option<serde_json::Value>,
+}
+
+/// An active tunnel connector (a running cloudflared instance).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TunnelConnector {
+    pub id: String,
+    pub version: Option<String>,
+    pub arch: Option<String>,
+    pub run_at: Option<String>,
+    #[serde(default)]
+    pub conns: Vec<TunnelEdgeConnection>,
+}
+
+/// A single connection from a connector to a Cloudflare edge location.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TunnelEdgeConnection {
+    pub colo_name: Option<String>,
+    pub origin_ip: Option<String>,
+    pub opened_at: Option<String>,
+    pub is_pending_reconnect: Option<bool>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DnsRecord {
     pub id: String,
@@ -134,11 +175,20 @@ pub struct Account {
     pub name: String,
 }
 
+/// Token verification outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenVerifyStatus {
+    Valid,
+    Invalid,
+    Unknown,
+}
+
 // ---------------------------------------------------------------------------
 // CloudflareClient
 // ---------------------------------------------------------------------------
 
 /// Unified HTTP client for all Cloudflare API interactions.
+#[derive(Clone)]
 pub struct CloudflareClient {
     http: reqwest::Client,
     pub account_id: String,
@@ -238,6 +288,12 @@ impl CloudflareClient {
             .ok_or_else(|| anyhow::anyhow!("empty result from Cloudflare API (HTTP {status})"))
     }
 
+    /// Fetch raw JSON response (for debugging API responses).
+    pub async fn get_raw(&self, url: &str) -> Result<String> {
+        let resp = self.http.get(url).send().await.context("HTTP GET failed")?;
+        resp.text().await.context("failed to read response body")
+    }
+
     fn require_zone_id(&self) -> Result<&str> {
         self.zone_id
             .as_deref()
@@ -247,15 +303,53 @@ impl CloudflareClient {
     // -- Token verification -------------------------------------------------
 
     /// Verify the current API token is valid.
-    pub async fn verify_token(token: &str) -> Result<bool> {
+    pub async fn verify_token(token: &str, _account_id: Option<&str>) -> Result<TokenVerifyStatus> {
         let client = reqwest::Client::new();
-        let resp = client
-            .get(format!("{BASE_URL}/user/tokens/verify"))
+        let url = format!("{BASE_URL}/user/tokens/verify");
+        let resp = match client
+            .get(url)
             .header("Authorization", format!("Bearer {token}"))
             .send()
             .await
-            .context("failed to verify token")?;
-        Ok(resp.status().is_success())
+        {
+            Ok(r) => r,
+            Err(_) => return Ok(TokenVerifyStatus::Unknown),
+        };
+
+        let body = resp.text().await.unwrap_or_default();
+
+        #[derive(Deserialize)]
+        struct VerifyResult {
+            status: Option<String>,
+        }
+
+        if let Ok(cf) = serde_json::from_str::<CfResponse<VerifyResult>>(&body) {
+            if cf.success {
+                return Ok(TokenVerifyStatus::Valid);
+            }
+
+            let err_text = cf
+                .errors
+                .iter()
+                .map(|e| e.message.to_lowercase())
+                .collect::<Vec<_>>()
+                .join(" ");
+            if err_text.contains("permission")
+                || err_text.contains("denied")
+                || err_text.contains("forbidden")
+                || err_text.contains("unauthorized")
+            {
+                return Ok(TokenVerifyStatus::Unknown);
+            }
+
+            if err_text.contains("invalid") || err_text.contains("expired") {
+                return Ok(TokenVerifyStatus::Invalid);
+            }
+
+            return Ok(TokenVerifyStatus::Unknown);
+        }
+
+        Ok(TokenVerifyStatus::Unknown)
     }
 
     /// Fetch all accounts accessible by the token.
@@ -320,6 +414,48 @@ impl CloudflareClient {
             self.account_id
         );
         self.get(&url).await
+    }
+
+    /// Get the tunnel token (used to run `cloudflared tunnel run --token <TOKEN>`).
+    pub async fn get_tunnel_token(&self, tunnel_id: &str) -> Result<String> {
+        let url = format!(
+            "{BASE_URL}/accounts/{}/cfd_tunnel/{tunnel_id}/token",
+            self.account_id
+        );
+        self.get(&url).await
+    }
+
+    /// List active connectors for a tunnel.
+    pub async fn list_tunnel_connections(&self, tunnel_id: &str) -> Result<Vec<TunnelConnector>> {
+        let url = format!(
+            "{BASE_URL}/accounts/{}/cfd_tunnel/{tunnel_id}/connections",
+            self.account_id
+        );
+        self.get(&url).await
+    }
+
+    // -- Tunnel configuration (remotely-managed) ----------------------------
+
+    /// Get the ingress configuration for a remotely-managed tunnel.
+    pub async fn get_tunnel_config(&self, tunnel_id: &str) -> Result<TunnelConfiguration> {
+        let url = format!(
+            "{BASE_URL}/accounts/{}/cfd_tunnel/{tunnel_id}/configurations",
+            self.account_id
+        );
+        self.get(&url).await
+    }
+
+    /// Set the ingress configuration for a remotely-managed tunnel.
+    pub async fn put_tunnel_config(
+        &self,
+        tunnel_id: &str,
+        config: &TunnelConfiguration,
+    ) -> Result<TunnelConfiguration> {
+        let url = format!(
+            "{BASE_URL}/accounts/{}/cfd_tunnel/{tunnel_id}/configurations",
+            self.account_id
+        );
+        self.put(&url, config).await
     }
 
     // -- DNS operations -----------------------------------------------------

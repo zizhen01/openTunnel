@@ -36,7 +36,13 @@ pub async fn show_stats() -> Result<()> {
         t!(l, "📊 Tunnel Statistics", "📊 隧道统计信息").bold()
     );
 
-    let metrics = fetch_metrics().await?;
+    let metrics = match fetch_metrics().await {
+        Ok(metrics) => metrics,
+        Err(_) => {
+            print_metrics_unavailable_hint();
+            return Ok(());
+        }
+    };
 
     let mut table = Table::new();
     table.load_preset(UTF8_FULL);
@@ -152,6 +158,43 @@ fn print_compact_metrics(m: &TunnelMetrics) {
         format_metric(m.active_streams).green(),
         t!(l, "Errors:", "错误:").bold(),
         format_metric(m.request_errors).normal().red()
+    );
+}
+
+fn print_metrics_unavailable_hint() {
+    let l = lang();
+    println!(
+        "\n{}",
+        t!(
+            l,
+            "⚠️  Cannot reach cloudflared metrics endpoint.",
+            "⚠️  无法连接 cloudflared 指标端点。"
+        )
+        .yellow()
+    );
+    println!(
+        "  • {}",
+        t!(
+            l,
+            "Ensure cloudflared is running.",
+            "请确认 cloudflared 正在运行。"
+        )
+    );
+    println!(
+        "  • {}",
+        t!(
+            l,
+            "Enable metrics in cloudflared config: metrics: 127.0.0.1:20241",
+            "请在 cloudflared 配置中开启 metrics: 127.0.0.1:20241"
+        )
+    );
+    println!(
+        "  • {}",
+        t!(
+            l,
+            "Restart cloudflared after config changes.",
+            "修改配置后请重启 cloudflared。"
+        )
     );
 }
 

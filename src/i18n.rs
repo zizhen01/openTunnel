@@ -1,24 +1,32 @@
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 /// Supported languages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lang {
-    En,
-    Zh,
+    En = 0,
+    Zh = 1,
 }
 
-static CURRENT_LANG: OnceLock<Lang> = OnceLock::new();
+static CURRENT_LANG: AtomicU8 = AtomicU8::new(0); // default En
 
 /// Initialise the global language.
 /// Priority: CLI flag > `CFT_LANG` env > config file > system locale > default `En`.
 pub fn init_lang(cli_flag: Option<&str>, config_lang: Option<&str>) {
     let lang = resolve_lang(cli_flag, config_lang);
-    let _ = CURRENT_LANG.set(lang);
+    set_lang(lang);
 }
 
-/// Return the active language (defaults to `En` if uninitialised).
+/// Set the global language at runtime.
+pub fn set_lang(l: Lang) {
+    CURRENT_LANG.store(l as u8, Ordering::Relaxed);
+}
+
+/// Return the active language (defaults to `En`).
 pub fn lang() -> Lang {
-    CURRENT_LANG.get().copied().unwrap_or(Lang::En)
+    match CURRENT_LANG.load(Ordering::Relaxed) {
+        1 => Lang::Zh,
+        _ => Lang::En,
+    }
 }
 
 fn resolve_lang(cli_flag: Option<&str>, config_lang: Option<&str>) -> Lang {
@@ -55,7 +63,7 @@ fn resolve_lang(cli_flag: Option<&str>, config_lang: Option<&str>) -> Lang {
     Lang::En
 }
 
-fn parse_lang(s: &str) -> Option<Lang> {
+pub fn parse_lang(s: &str) -> Option<Lang> {
     match s.to_lowercase().as_str() {
         "en" | "english" => Some(Lang::En),
         "zh" | "cn" | "chinese" | "中文" => Some(Lang::Zh),
@@ -98,5 +106,13 @@ mod tests {
     fn t_macro_selects_correctly() {
         assert_eq!(t!(Lang::En, "Hello", "你好"), "Hello");
         assert_eq!(t!(Lang::Zh, "Hello", "你好"), "你好");
+    }
+
+    #[test]
+    fn set_lang_at_runtime() {
+        set_lang(Lang::Zh);
+        assert_eq!(lang(), Lang::Zh);
+        set_lang(Lang::En);
+        assert_eq!(lang(), Lang::En);
     }
 }

@@ -15,7 +15,7 @@ mod tunnel;
 use clap::Parser;
 use colored::Colorize;
 
-use cli::{AccessAction, Cli, Commands, ConfigAction, DnsAction};
+use cli::{AccessAction, AccountAction, Cli, Commands, ConfigAction, DnsAction};
 use error::Result;
 use i18n::lang;
 
@@ -49,19 +49,35 @@ async fn run(cli: Cli) -> Result<()> {
             let client = require_client()?;
             tunnel::create_tunnel(&client, name).await
         }
-        Some(Commands::Switch) => {
-            let client = require_client()?;
-            tunnel::switch_tunnel(&client).await
-        }
         Some(Commands::Delete) => {
             let client = require_client()?;
             tunnel::delete_tunnel(&client).await
         }
+        Some(Commands::Token { id }) => {
+            let client = require_client()?;
+            tunnel::get_token(&client, id).await
+        }
 
-        // Mapping management
-        Some(Commands::Map { hostname, service }) => tunnel::add_mapping(hostname, service).await,
-        Some(Commands::Unmap { hostname }) => tunnel::remove_mapping(hostname).await,
-        Some(Commands::Show) => tunnel::show_mappings(),
+        // Mapping management (remotely-managed via API)
+        Some(Commands::Map {
+            tunnel: tid,
+            hostname,
+            service,
+        }) => {
+            let client = require_client()?;
+            tunnel::add_mapping(&client, tid, hostname, service).await
+        }
+        Some(Commands::Unmap {
+            tunnel: tid,
+            hostname,
+        }) => {
+            let client = require_client()?;
+            tunnel::remove_mapping(&client, tid, hostname).await
+        }
+        Some(Commands::Show { id }) => {
+            let client = require_client()?;
+            tunnel::show_mappings(&client, id).await
+        }
 
         // DNS
         Some(Commands::Dns { action }) => {
@@ -75,13 +91,9 @@ async fn run(cli: Cli) -> Result<()> {
                     proxied,
                 } => dns::add_record(&client, name, record_type, content, proxied).await,
                 DnsAction::Delete { id } => dns::delete_record(&client, id).await,
-                DnsAction::Sync => dns::sync_tunnel_routes(&client).await,
+                DnsAction::Sync { tunnel: tid } => dns::sync_tunnel_routes(&client, tid).await,
             }
         }
-
-        // Monitoring
-        Some(Commands::Stats) => monitor::show_stats().await,
-        Some(Commands::Monitor) => monitor::real_time_monitor().await,
 
         // Access
         Some(Commands::Access { action }) => {
@@ -96,19 +108,13 @@ async fn run(cli: Cli) -> Result<()> {
             }
         }
 
-        // Service control
-        Some(Commands::Start) => tools::start_service(),
-        Some(Commands::Stop) => tools::stop_service(),
-        Some(Commands::Restart) => tools::restart_service(),
-        Some(Commands::Status) => tools::show_service_status(),
-
-        // Diagnostics
-        Some(Commands::Check) => tools::health_check().await,
-        Some(Commands::Debug) => tools::debug_mode(),
-
         // Config
         Some(Commands::Config { action }) => match action {
             ConfigAction::Set => menu::run_config_set_wizard().await,
+            ConfigAction::Account { action } => match action {
+                AccountAction::List => menu::list_accounts().await,
+                AccountAction::Set { id } => menu::set_account(id).await,
+            },
             ConfigAction::Show => {
                 print_api_config();
                 Ok(())
@@ -134,18 +140,34 @@ async fn run(cli: Cli) -> Result<()> {
                     .api_token
                     .as_deref()
                     .ok_or_else(|| anyhow::anyhow!("missing api token in config"))?;
-                if client::CloudflareClient::verify_token(token).await? {
-                    println!(
-                        "{} {}",
-                        "✅".green(),
-                        t!(l, "API connection successful.", "API 连接正常。")
-                    );
-                } else {
-                    println!(
-                        "{} {}",
-                        "❌".red(),
-                        t!(l, "API connection failed.", "API 连接失败。")
-                    );
+                match client::CloudflareClient::verify_token(token, cfg.account_id.as_deref())
+                    .await?
+                {
+                    client::TokenVerifyStatus::Valid => {
+                        println!(
+                            "{} {}",
+                            "✅".green(),
+                            t!(l, "API connection successful.", "API 连接正常。")
+                        );
+                    }
+                    client::TokenVerifyStatus::Invalid => {
+                        println!(
+                            "{} {}",
+                            "❌".red(),
+                            t!(l, "API connection failed.", "API 连接失败。")
+                        );
+                    }
+                    client::TokenVerifyStatus::Unknown => {
+                        println!(
+                            "{} {}",
+                            "⚠️".yellow(),
+                            t!(
+                                l,
+                                "Token verification inconclusive. Check permissions.",
+                                "Token 校验不明确，请检查权限设置。"
+                            )
+                        );
+                    }
                 }
                 Ok(())
             }

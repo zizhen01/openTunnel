@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "tunnel",
     version,
-    about = "Cloudflare Tunnel Manager — manage tunnels, DNS, Access & more",
+    about = "openTunnel — manage Cloudflare Tunnels, DNS, Access & more",
     long_about = "tunnel — an open-source CLI for managing Cloudflare Tunnels, DNS records,\n\
                    Zero Trust Access applications, and real-time monitoring.\n\n\
                    Run `tunnel` with no arguments to enter the interactive menu."
@@ -31,14 +31,20 @@ pub enum Commands {
         /// Tunnel name
         name: Option<String>,
     },
-    /// Switch active tunnel / 切换隧道
-    Switch,
     /// Delete a tunnel / 删除隧道
     Delete,
+    /// Get tunnel run token / 获取隧道运行 Token
+    Token {
+        /// Tunnel ID (interactive if omitted)
+        id: Option<String>,
+    },
 
-    // === Mapping management ===
+    // === Mapping management (remotely-managed) ===
     /// Add a domain mapping / 添加域名映射
     Map {
+        /// Tunnel ID (interactive if omitted)
+        #[arg(long)]
+        tunnel: Option<String>,
         /// Hostname, e.g. app.example.com
         hostname: Option<String>,
         /// Local service, e.g. http://localhost:3000
@@ -46,11 +52,17 @@ pub enum Commands {
     },
     /// Remove a domain mapping / 移除域名映射
     Unmap {
+        /// Tunnel ID (interactive if omitted)
+        #[arg(long)]
+        tunnel: Option<String>,
         /// Hostname to remove
         hostname: Option<String>,
     },
     /// Show current mappings / 查看当前映射
-    Show,
+    Show {
+        /// Tunnel ID (interactive if omitted)
+        id: Option<String>,
+    },
 
     // === DNS management ===
     /// DNS record management / DNS 记录管理
@@ -59,34 +71,12 @@ pub enum Commands {
         action: DnsAction,
     },
 
-    // === Monitoring ===
-    /// Show tunnel statistics / 查看隧道统计
-    Stats,
-    /// Real-time monitoring / 实时监控
-    Monitor,
-
     // === Zero Trust / Access ===
     /// Cloudflare Access management / Access 管理
     Access {
         #[command(subcommand)]
         action: AccessAction,
     },
-
-    // === Service control ===
-    /// Start cloudflared service / 启动服务
-    Start,
-    /// Stop cloudflared service / 停止服务
-    Stop,
-    /// Restart cloudflared service / 重启服务
-    Restart,
-    /// Show service status / 查看状态
-    Status,
-
-    // === Diagnostics ===
-    /// Run health check / 健康检查
-    Check,
-    /// Debug mode / 调试模式
-    Debug,
 
     // === Config ===
     /// API configuration / API 配置
@@ -132,7 +122,11 @@ pub enum DnsAction {
         id: Option<String>,
     },
     /// Sync tunnel routes to DNS / 同步隧道路由到 DNS
-    Sync,
+    Sync {
+        /// Tunnel ID (interactive if omitted)
+        #[arg(long)]
+        tunnel: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -163,6 +157,11 @@ pub enum AccessAction {
 pub enum ConfigAction {
     /// Set API token and account/zone / 设置 API Token
     Set,
+    /// Account management / 账户管理
+    Account {
+        #[command(subcommand)]
+        action: AccountAction,
+    },
     /// Show current configuration / 查看当前配置
     Show,
     /// Test API connection / 测试 API 连接
@@ -173,5 +172,16 @@ pub enum ConfigAction {
     Lang {
         /// Language code: en / zh
         code: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AccountAction {
+    /// List accounts / 列出账户
+    List,
+    /// Set active account / 设置当前账户
+    Set {
+        /// Account ID to set (optional)
+        id: Option<String>,
     },
 }

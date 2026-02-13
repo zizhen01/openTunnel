@@ -2,7 +2,7 @@ use colored::Colorize;
 use comfy_table::{presets::UTF8_FULL, Table};
 
 use crate::client::{
-    AccessPolicy, CloudflareClient, CreateAccessApp, PolicyEmailDomain, PolicyRule,
+    AccessPolicy, CloudflareClient, CreateAccessApp, PolicyEmail, PolicyEmailDomain, PolicyRule,
 };
 use crate::error::Result;
 use crate::i18n::lang;
@@ -45,7 +45,6 @@ pub async fn list_apps(client: &CloudflareClient) -> Result<()> {
         t!(l, "Name", "名称"),
         t!(l, "Domain", "域名"),
         t!(l, "Type", "类型"),
-        t!(l, "Session", "会话时长"),
         "ID",
     ]);
 
@@ -55,7 +54,6 @@ pub async fn list_apps(client: &CloudflareClient) -> Result<()> {
             &app.name,
             &app.domain,
             app.app_type.as_deref().unwrap_or("-"),
-            app.session_duration.as_deref().unwrap_or("-"),
             &id_display,
         ]);
     }
@@ -290,7 +288,7 @@ pub async fn manage_policies(client: &CloudflareClient, app_id: Option<String>) 
     table.set_header(vec![t!(l, "Name", "名称"), t!(l, "Decision", "决策"), "ID"]);
 
     for p in &policies {
-        let id_display = p.id.as_deref().unwrap_or("-").to_string();
+        let id_display = short_id(p.id.as_deref());
         table.add_row(vec![&p.name, &p.decision, &id_display]);
     }
 
@@ -321,8 +319,13 @@ async fn create_policy_interactive(client: &CloudflareClient, app_id: &str) -> R
     let rule_types = vec![
         t!(
             l,
-            "Email domain (e.g. @company.com)",
-            "邮箱域名 (如 @company.com)"
+            "Email (e.g. user@example.com)",
+            "邮箱地址 (如 user@example.com)"
+        ),
+        t!(
+            l,
+            "Email domain (e.g. example.com)",
+            "邮箱域名 (如 example.com)"
         ),
         t!(l, "Everyone", "所有人"),
     ];
@@ -332,7 +335,19 @@ async fn create_policy_interactive(client: &CloudflareClient, app_id: &str) -> R
 
     let include = match rule_sel {
         0 => {
-            let domain = match prompt::input_opt(
+            let email = match prompt::input_opt(t!(l, "Email address", "邮箱地址"), false, None)
+            {
+                Some(v) => v,
+                None => return Ok(()),
+            };
+            vec![PolicyRule {
+                email: Some(PolicyEmail { email }),
+                email_domain: None,
+                everyone: None,
+            }]
+        }
+        1 => {
+            let mut domain = match prompt::input_opt(
                 t!(l, "Email domain", "邮箱域名"),
                 false,
                 Some("example.com"),
@@ -340,6 +355,10 @@ async fn create_policy_interactive(client: &CloudflareClient, app_id: &str) -> R
                 Some(v) => v,
                 None => return Ok(()),
             };
+            // Strip leading @ or extract domain from full email
+            if let Some(at_pos) = domain.find('@') {
+                domain = domain[at_pos + 1..].to_string();
+            }
             vec![PolicyRule {
                 email: None,
                 email_domain: Some(PolicyEmailDomain { domain }),
