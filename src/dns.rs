@@ -8,6 +8,44 @@ use crate::prompt;
 use crate::t;
 use crate::tunnel;
 
+/// Create a CNAME record for a single hostname pointing to a tunnel.
+/// Skips silently if the record already exists.
+pub async fn ensure_dns_for_hostname(
+    client: &CloudflareClient,
+    tunnel_id: &str,
+    hostname: &str,
+) -> Result<()> {
+    let l = lang();
+    let tunnel_cname = format!("{tunnel_id}.cfargotunnel.com");
+
+    let existing = client.list_dns_records().await.unwrap_or_default();
+    let exists = existing
+        .iter()
+        .any(|r| r.name == hostname && r.record_type == "CNAME");
+
+    if exists {
+        println!(
+            "  ⏭️ {} {} → {}",
+            hostname,
+            t!(l, "(CNAME already exists)", "(CNAME 已存在)"),
+            tunnel_cname
+        );
+        return Ok(());
+    }
+
+    let record = CreateDnsRecord {
+        record_type: "CNAME".to_string(),
+        name: hostname.to_string(),
+        content: tunnel_cname.clone(),
+        proxied: true,
+        ttl: None,
+    };
+
+    client.create_dns_record(&record).await?;
+    println!("  {} {} → {}", "✅".green(), hostname, tunnel_cname);
+    Ok(())
+}
+
 fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
 }

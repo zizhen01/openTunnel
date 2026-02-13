@@ -40,13 +40,13 @@ pub async fn interactive_menu() -> Result<()> {
         }
 
         let options = vec![
+            t!(l, "➕ Add Domain Mapping", "➕ 添加域名映射"),
             t!(l, "🌩️  Tunnel Management", "🌩️  隧道管理"),
+            t!(l, "⚙️  cloudflared Service", "⚙️  cloudflared 服务"),
             t!(l, "🌐 DNS Management", "🌐 DNS 管理"),
             t!(l, "🔐 Zero Trust / Access", "🔐 Zero Trust / Access"),
-            t!(l, "📊 Statistics & Monitoring", "📊 统计与监控"),
-            t!(l, "🔍 Scan Local Services", "🔍 扫描本地服务"),
-            t!(l, "⚙️  API Configuration", "⚙️  API 配置"),
-            t!(l, "🔧 System Tools", "🔧 系统工具"),
+            t!(l, "📊 Monitoring & Scan", "📊 监控与扫描"),
+            t!(l, "🔧 Settings", "🔧 设置"),
             t!(l, "❌ Exit", "❌ 退出"),
         ];
 
@@ -63,13 +63,20 @@ pub async fn interactive_menu() -> Result<()> {
         };
 
         let result = match sel {
-            Some(0) => tunnel_menu().await,
-            Some(1) => dns_menu().await,
-            Some(2) => access_menu().await,
-            Some(3) => monitoring_menu().await,
-            Some(4) => scan::scan_local_services(None, 500).await,
-            Some(5) => config_menu().await,
-            Some(6) => tools_menu().await,
+            Some(0) => {
+                // Quick Map — the killer feature
+                if let Some(client) = try_build_client() {
+                    tunnel::add_mapping(&client, None, None, None).await
+                } else {
+                    Ok(())
+                }
+            }
+            Some(1) => tunnel_menu().await,
+            Some(2) => tunnel_service_menu().await,
+            Some(3) => dns_menu().await,
+            Some(4) => access_menu().await,
+            Some(5) => monitoring_scan_menu().await,
+            Some(6) => settings_menu().await,
             Some(7) | None => {
                 println!("{}", t!(l, "👋 Goodbye!", "👋 再见！").cyan());
                 break;
@@ -95,7 +102,12 @@ pub async fn run_config_set_wizard() -> Result<()> {
 
 fn print_banner() {
     println!("\n{}", "═".repeat(60).cyan());
-    println!("{}", "  🌩️  openTunnel v0.1.5".bold().cyan());
+    println!(
+        "{}",
+        format!("  🌩️  openTunnel v{}", env!("CARGO_PKG_VERSION"))
+            .bold()
+            .cyan()
+    );
     println!("{}", "═".repeat(60).cyan());
 }
 
@@ -161,58 +173,33 @@ fn try_build_client_with_zone() -> Option<CloudflareClient> {
 
 async fn tunnel_menu() -> Result<()> {
     let l = lang();
+    let client = match try_build_client() {
+        Some(c) => c,
+        None => return Ok(()),
+    };
+
     let options = vec![
+        t!(l, "📋 Show mappings", "📋 查看当前映射"),
+        t!(l, "➕ Add domain mapping", "➕ 添加域名映射"),
+        t!(l, "➖ Remove domain mapping", "➖ 移除域名映射"),
         t!(l, "📋 List tunnels", "📋 查看隧道列表"),
         t!(l, "🆕 Create tunnel", "🆕 创建新隧道"),
         t!(l, "🗑️  Delete tunnel", "🗑️  删除隧道"),
         t!(l, "🔑 Get tunnel token", "🔑 获取隧道 Token"),
-        t!(l, "📋 Show mappings", "📋 查看当前映射"),
-        t!(l, "➕ Add domain mapping", "➕ 添加域名映射"),
-        t!(l, "➖ Remove domain mapping", "➖ 移除域名映射"),
-        t!(l, "⚙️ Manage tunnel service", "⚙️ 管理隧道服务"),
         t!(l, "◀️  Back", "◀️  返回主菜单"),
     ];
 
     let sel = prompt::select_opt(t!(l, "Tunnel Management", "隧道管理"), &options, None);
 
     match sel {
-        Some(0) => {
-            if let Some(client) = try_build_client() {
-                tunnel::list_tunnels(&client).await?;
-            }
-        }
-        Some(1) => {
-            if let Some(client) = try_build_client() {
-                tunnel::create_tunnel(&client, None).await?;
-            }
-        }
-        Some(2) => {
-            if let Some(client) = try_build_client() {
-                tunnel::delete_tunnel(&client).await?;
-            }
-        }
-        Some(3) => {
-            if let Some(client) = try_build_client() {
-                tunnel::get_token(&client, None).await?;
-            }
-        }
-        Some(4) => {
-            if let Some(client) = try_build_client() {
-                tunnel::show_mappings(&client, None).await?;
-            }
-        }
-        Some(5) => {
-            if let Some(client) = try_build_client() {
-                tunnel::add_mapping(&client, None, None, None).await?;
-            }
-        }
-        Some(6) => {
-            if let Some(client) = try_build_client() {
-                tunnel::remove_mapping(&client, None, None).await?;
-            }
-        }
-        Some(7) => tunnel_service_menu().await?,
-        Some(8) | None => {}
+        Some(0) => tunnel::show_mappings(&client, None).await?,
+        Some(1) => tunnel::add_mapping(&client, None, None, None).await?,
+        Some(2) => tunnel::remove_mapping(&client, None, None).await?,
+        Some(3) => tunnel::list_tunnels(&client).await?,
+        Some(4) => tunnel::create_tunnel(&client, None).await?,
+        Some(5) => tunnel::delete_tunnel(&client).await?,
+        Some(6) => tunnel::get_token(&client, None).await?,
+        Some(7) | None => {}
         _ => {}
     }
     Ok(())
@@ -331,16 +318,17 @@ async fn access_menu() -> Result<()> {
 // Monitoring sub-menu
 // ---------------------------------------------------------------------------
 
-async fn monitoring_menu() -> Result<()> {
+async fn monitoring_scan_menu() -> Result<()> {
     let l = lang();
     let options = vec![
         t!(l, "📊 Tunnel statistics", "📊 隧道统计"),
         t!(l, "📈 Real-time monitor", "📈 实时监控"),
+        t!(l, "🔍 Scan local services", "🔍 扫描本地服务"),
         t!(l, "◀️  Back", "◀️  返回主菜单"),
     ];
 
     let sel = prompt::select_opt(
-        t!(l, "Statistics & Monitoring", "统计与监控"),
+        t!(l, "Monitoring & Scan", "监控与扫描"),
         &options,
         None,
     );
@@ -348,7 +336,8 @@ async fn monitoring_menu() -> Result<()> {
     match sel {
         Some(0) => monitor::show_stats().await?,
         Some(1) => monitor::real_time_monitor().await?,
-        Some(2) | None => {}
+        Some(2) => scan::scan_local_services(None, 500).await?,
+        Some(3) | None => {}
         _ => {}
     }
     Ok(())
@@ -358,28 +347,34 @@ async fn monitoring_menu() -> Result<()> {
 // Config sub-menu
 // ---------------------------------------------------------------------------
 
-async fn config_menu() -> Result<()> {
+async fn settings_menu() -> Result<()> {
     let l = lang();
     let options = vec![
+        t!(l, "🌐 Switch language", "🌐 切换语言"),
         t!(l, "🔑 Set API Token", "🔑 设置 API Token"),
         t!(l, "👤 Account Management", "👤 账户管理"),
         t!(l, "📋 Show config", "📋 查看当前配置"),
         t!(l, "🧪 Test API connection", "🧪 测试 API 连接"),
-        t!(l, "🌐 Switch language", "🌐 切换语言"),
+        t!(l, "🔧 Health check", "🔧 健康检查"),
+        t!(l, "🐛 Debug info", "🐛 调试信息"),
+        t!(l, "📦 Export config", "📦 导出配置"),
         t!(l, "🗑️  Clear config", "🗑️  清除配置"),
         t!(l, "◀️  Back", "◀️  返回主菜单"),
     ];
 
-    let sel = prompt::select_opt(t!(l, "API Configuration", "API 配置"), &options, None);
+    let sel = prompt::select_opt(t!(l, "Settings", "设置"), &options, None);
 
     match sel {
-        Some(0) => set_api_token().await?,
-        Some(1) => account_menu().await?,
-        Some(2) => show_api_config()?,
-        Some(3) => test_api_connection().await?,
-        Some(4) => switch_language()?,
-        Some(5) => clear_config()?,
-        Some(6) | None => {}
+        Some(0) => switch_language()?,
+        Some(1) => set_api_token().await?,
+        Some(2) => account_menu().await?,
+        Some(3) => show_api_config()?,
+        Some(4) => test_api_connection().await?,
+        Some(5) => tools::health_check().await?,
+        Some(6) => tools::debug_mode()?,
+        Some(7) => tools::export_config()?,
+        Some(8) => clear_config()?,
+        Some(9) | None => {}
         _ => {}
     }
     Ok(())
@@ -956,27 +951,3 @@ fn clear_config() -> Result<()> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Tools sub-menu
-// ---------------------------------------------------------------------------
-
-async fn tools_menu() -> Result<()> {
-    let l = lang();
-    let options = vec![
-        t!(l, "🔧 Health check", "🔧 健康检查"),
-        t!(l, "🐛 Debug info", "🐛 调试信息"),
-        t!(l, "📦 Export config", "📦 导出配置"),
-        t!(l, "◀️  Back", "◀️  返回主菜单"),
-    ];
-
-    let sel = prompt::select_opt(t!(l, "System Tools", "系统工具"), &options, None);
-
-    match sel {
-        Some(0) => tools::health_check().await?,
-        Some(1) => tools::debug_mode()?,
-        Some(2) => tools::export_config()?,
-        Some(3) | None => {}
-        _ => {}
-    }
-    Ok(())
-}

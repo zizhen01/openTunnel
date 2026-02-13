@@ -6,9 +6,7 @@ use comfy_table::{presets::UTF8_FULL, Table};
 use crate::client::{CloudflareClient, IngressRule, TunnelConfigInner, TunnelConfiguration};
 use crate::error::Result;
 use crate::i18n::lang;
-use crate::prompt;
-use crate::service;
-use crate::t;
+use crate::{dns, prompt, service, t};
 
 fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
@@ -516,6 +514,46 @@ pub async fn add_mapping(
 
     client.put_tunnel_config(&tunnel_id, &config).await?;
     println!("{} {} → {}", "✅".green(), hostname.cyan(), service);
+
+    // Offer to create DNS record for this specific hostname (only if zone is configured)
+    if client.zone_id.is_some() {
+        let dns_prompt = t!(
+            l,
+            "Create DNS record for this hostname now?",
+            "是否立刻为该域名创建 DNS 记录？"
+        );
+        if prompt::confirm_opt(dns_prompt, true) == Some(true) {
+            if let Err(e) =
+                dns::ensure_dns_for_hostname(client, &tunnel_id, &hostname).await
+            {
+                println!(
+                    "{} {} {:#}",
+                    "⚠️".yellow(),
+                    t!(l, "DNS record creation failed:", "DNS 记录创建失败:"),
+                    e
+                );
+                println!(
+                    "  {}",
+                    t!(
+                        l,
+                        "You can manually run: tunnel dns sync",
+                        "可手动执行: tunnel dns sync"
+                    )
+                );
+            }
+        }
+    } else {
+        println!(
+            "{}",
+            t!(
+                l,
+                "💡 DNS zone not configured. Run `tunnel config set` to enable auto DNS sync.",
+                "💡 未配置 DNS 域名，运行 `tunnel config set` 后可自动同步 DNS。"
+            )
+            .cyan()
+        );
+    }
+
     Ok(())
 }
 

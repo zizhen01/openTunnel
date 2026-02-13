@@ -76,19 +76,112 @@ pub async fn install(client: &CloudflareClient, tunnel_id: Option<String>) -> Re
         .bold()
     );
 
-    run_and_print(
-        Command::new("cloudflared")
-            .arg("service")
-            .arg("install")
-            .arg(token),
-    )?;
+    // Try installing; if it fails because a service already exists, offer to reinstall
+    let output = Command::new("cloudflared")
+        .arg("service")
+        .arg("install")
+        .arg(&token)
+        .output()
+        .context("failed to run cloudflared service install")?;
 
-    println!(
-        "{} {} {}",
-        "✅".green(),
-        t!(l, "Service installed for tunnel", "服务已安装到隧道"),
-        tunnel_id
-    );
+    if output.status.success() {
+        if !output.stdout.is_empty() {
+            print!("{}", String::from_utf8_lossy(&output.stdout));
+        }
+        println!(
+            "{} {} {}",
+            "✅".green(),
+            t!(l, "Service installed for tunnel", "服务已安装到隧道"),
+            tunnel_id
+        );
+        prompt_start_service()?;
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let combined = format!("{stdout}{stderr}");
+
+    if combined.contains("already installed") {
+        println!(
+            "{}",
+            t!(
+                l,
+                "⚠️  cloudflared service is already installed for another tunnel.",
+                "⚠️  cloudflared 服务已为其他隧道安装。"
+            )
+            .yellow()
+        );
+
+        let prompt_msg = t!(
+            l,
+            "Uninstall existing service and reinstall for the new tunnel?",
+            "是否卸载现有服务并重新安装到新隧道？"
+        );
+
+        match prompt::confirm_opt(prompt_msg, true) {
+            Some(true) => {
+                println!(
+                    "{}",
+                    t!(
+                        l,
+                        "🗑️  Uninstalling existing cloudflared service...",
+                        "🗑️  正在卸载现有 cloudflared 服务..."
+                    )
+                    .bold()
+                );
+                run_and_print(
+                    Command::new("cloudflared")
+                        .arg("service")
+                        .arg("uninstall"),
+                )?;
+
+                println!(
+                    "{}",
+                    t!(
+                        l,
+                        "📦 Reinstalling cloudflared service...",
+                        "📦 正在重新安装 cloudflared 服务..."
+                    )
+                    .bold()
+                );
+                run_and_print(
+                    Command::new("cloudflared")
+                        .arg("service")
+                        .arg("install")
+                        .arg(&token),
+                )?;
+
+                println!(
+                    "{} {} {}",
+                    "✅".green(),
+                    t!(l, "Service reinstalled for tunnel", "服务已重新安装到隧道"),
+                    tunnel_id
+                );
+                prompt_start_service()?;
+            }
+            _ => {
+                println!(
+                    "{}",
+                    t!(
+                        l,
+                        "Aborted. Existing service remains unchanged.",
+                        "已中止，现有服务保持不变。"
+                    )
+                );
+            }
+        }
+    } else {
+        // Unknown error — print output and fail
+        if !stdout.is_empty() {
+            print!("{stdout}");
+        }
+        if !stderr.is_empty() {
+            eprint!("{stderr}");
+        }
+        return Err(anyhow!("cloudflared service install failed (exit {})", output.status));
+    }
+
     Ok(())
 }
 
@@ -182,6 +275,33 @@ pub fn logs(lines: usize) -> Result<()> {
             "服务日志当前仅支持 Linux/macOS/Windows。"
         ))),
     }
+}
+
+/// After a successful service install, offer to start immediately.
+fn prompt_start_service() -> Result<()> {
+    let l = lang();
+    let msg = t!(
+        l,
+        "Start the service now?",
+        "是否立刻启动服务？"
+    );
+    if prompt::confirm_opt(msg, true) == Some(true) {
+        println!(
+            "{}",
+            t!(l, "▶️ Starting service...", "▶️ 正在启动服务...").bold()
+        );
+        run_control_cmd("start")?;
+        println!(
+            "{} {}",
+            "✅".green(),
+            t!(
+                l,
+                "Service is running. Tunnel should become active shortly.",
+                "服务已启动，隧道应很快变为 active。"
+            )
+        );
+    }
+    Ok(())
 }
 
 fn run_control_cmd(action: &str) -> Result<()> {
