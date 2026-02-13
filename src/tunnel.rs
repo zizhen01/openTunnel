@@ -523,9 +523,7 @@ pub async fn add_mapping(
             "是否立刻为该域名创建 DNS 记录？"
         );
         if prompt::confirm_opt(dns_prompt, true) == Some(true) {
-            if let Err(e) =
-                dns::ensure_dns_for_hostname(client, &tunnel_id, &hostname).await
-            {
+            if let Err(e) = dns::ensure_dns_for_hostname(client, &tunnel_id, &hostname).await {
                 println!(
                     "{} {} {:#}",
                     "⚠️".yellow(),

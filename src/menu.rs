@@ -327,11 +327,7 @@ async fn monitoring_scan_menu() -> Result<()> {
         t!(l, "◀️  Back", "◀️  返回主菜单"),
     ];
 
-    let sel = prompt::select_opt(
-        t!(l, "Monitoring & Scan", "监控与扫描"),
-        &options,
-        None,
-    );
+    let sel = prompt::select_opt(t!(l, "Monitoring & Scan", "监控与扫描"), &options, None);
 
     match sel {
         Some(0) => monitor::show_stats().await?,
@@ -950,4 +946,3 @@ fn clear_config() -> Result<()> {
     }
     Ok(())
 }
-

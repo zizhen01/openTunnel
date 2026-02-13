@@ -1,10 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main, dev]
-    tags-ignore:
-      - "v*"
   pull_request:
 
 permissions:
@@ -14,7 +10,6 @@ jobs:
   checks:
     name: Lint + Test
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || !startsWith(github.event.head_commit.message, 'chore(release):')
     steps:
       - name: Checkout
         uses: actions/checkout@v4

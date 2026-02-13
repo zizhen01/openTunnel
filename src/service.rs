@@ -130,11 +130,7 @@ pub async fn install(client: &CloudflareClient, tunnel_id: Option<String>) -> Re
                     )
                     .bold()
                 );
-                run_and_print(
-                    Command::new("cloudflared")
-                        .arg("service")
-                        .arg("uninstall"),
-                )?;
+                run_and_print(Command::new("cloudflared").arg("service").arg("uninstall"))?;
 
                 println!(
                     "{}",
@@ -179,7 +175,10 @@ pub async fn install(client: &CloudflareClient, tunnel_id: Option<String>) -> Re
         if !stderr.is_empty() {
             eprint!("{stderr}");
         }
-        return Err(anyhow!("cloudflared service install failed (exit {})", output.status));
+        return Err(anyhow!(
+            "cloudflared service install failed (exit {})",
+            output.status
+        ));
     }
 
     Ok(())
@@ -280,11 +279,7 @@ pub fn logs(lines: usize) -> Result<()> {
 /// After a successful service install, offer to start immediately.
 fn prompt_start_service() -> Result<()> {
     let l = lang();
-    let msg = t!(
-        l,
-        "Start the service now?",
-        "是否立刻启动服务？"
-    );
+    let msg = t!(l, "Start the service now?", "是否立刻启动服务？");
     if prompt::confirm_opt(msg, true) == Some(true) {
         println!(
             "{}",
@@ -573,11 +568,7 @@ fn install_cloudflared_macos() -> Result<()> {
     if brew_installed() {
         println!(
             "  {}",
-            t!(
-                l,
-                "Installing via Homebrew...",
-                "通过 Homebrew 安装中..."
-            )
+            t!(l, "Installing via Homebrew...", "通过 Homebrew 安装中...")
         );
         let status = Command::new("brew")
             .args(["install", "cloudflared"])
@@ -602,11 +593,7 @@ fn install_cloudflared_macos() -> Result<()> {
         _ => {
             return Err(anyhow!(
                 "{} {arch}. {}",
-                t!(
-                    l,
-                    "Unsupported architecture:",
-                    "不支持的架构："
-                ),
+                t!(l, "Unsupported architecture:", "不支持的架构："),
                 t!(
                     l,
                     "Please install Homebrew first, then run: brew install cloudflared",
@@ -623,11 +610,7 @@ fn install_cloudflared_macos() -> Result<()> {
     let tmp_dir_str = tmp_dir.display().to_string();
     let install_path = "/usr/local/bin/cloudflared";
 
-    println!(
-        "  {} {}",
-        t!(l, "Downloading", "下载中"),
-        url
-    );
+    println!("  {} {}", t!(l, "Downloading", "下载中"), url);
 
     // Create temp dir, download, extract
     let _ = std::fs::create_dir_all(&tmp_dir);
@@ -705,15 +688,17 @@ fn install_cloudflared_windows() -> Result<()> {
     let l = lang();
     println!(
         "  {}",
-        t!(
-            l,
-            "Installing via winget...",
-            "通过 winget 安装中..."
-        )
+        t!(l, "Installing via winget...", "通过 winget 安装中...")
     );
 
     let status = Command::new("winget")
-        .args(["install", "--id", "Cloudflare.cloudflared", "--accept-source-agreements", "--accept-package-agreements"])
+        .args([
+            "install",
+            "--id",
+            "Cloudflare.cloudflared",
+            "--accept-source-agreements",
+            "--accept-package-agreements",
+        ])
         .status()
         .context(t!(
             l,
