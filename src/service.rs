@@ -5,6 +5,7 @@ use colored::Colorize;
 
 use crate::client::CloudflareClient;
 use crate::i18n::lang;
+use crate::prompt;
 use crate::{t, tunnel};
 
 const SERVICE_NAME: &str = "cloudflared";
@@ -287,40 +288,328 @@ fn ensure_cloudflared_installed() -> Result<()> {
     }
 
     let l = lang();
-    let hint = match std::env::consts::OS {
-        "macos" => {
-            if brew_installed() {
-                t!(
-                    l,
-                    "cloudflared is not installed. Install with Homebrew: `brew install cloudflared`.",
-                    "未检测到 cloudflared。请优先使用 Homebrew 安装：`brew install cloudflared`。"
-                )
-            } else {
-                t!(
-                    l,
-                    "cloudflared is not installed. Install Homebrew first, then run: `brew install cloudflared`.",
-                    "未检测到 cloudflared。请先安装 Homebrew，再执行：`brew install cloudflared`。"
-                )
-            }
+    println!(
+        "{}",
+        t!(
+            l,
+            "⚠️  cloudflared is not installed on this system.",
+            "⚠️  当前系统未安装 cloudflared。"
+        )
+        .yellow()
+        .bold()
+    );
+
+    let prompt_msg = t!(
+        l,
+        "Would you like to install cloudflared automatically?",
+        "是否自动安装 cloudflared？"
+    );
+
+    match prompt::confirm_opt(prompt_msg, true) {
+        Some(true) => install_cloudflared()?,
+        _ => {
+            return Err(anyhow!(t!(
+                l,
+                "cloudflared is required but not installed. Aborted.",
+                "需要 cloudflared 但未安装，已中止。"
+            )));
         }
-        "linux" => t!(
+    }
+
+    // Verify installation succeeded
+    if !cloudflared_installed() {
+        return Err(anyhow!(t!(
             l,
-            "cloudflared is not installed. Install it first (for example: `sudo apt install cloudflared`).",
-            "未检测到 cloudflared。请先安装（例如：`sudo apt install cloudflared`）。"
-        ),
-        "windows" => t!(
+            "cloudflared installation completed but binary not found in PATH. Please check your environment.",
+            "cloudflared 安装流程已完成，但未在 PATH 中找到可执行文件。请检查环境配置。"
+        )));
+    }
+
+    // Print installed version
+    if let Ok(output) = Command::new("cloudflared").arg("--version").output() {
+        if output.status.success() {
+            let ver = String::from_utf8_lossy(&output.stdout);
+            println!(
+                "{} {} {}",
+                "✅".green(),
+                t!(l, "cloudflared installed:", "cloudflared 已安装:"),
+                ver.trim()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Automatically install cloudflared on the current platform.
+fn install_cloudflared() -> Result<()> {
+    let l = lang();
+    println!(
+        "{}",
+        t!(
             l,
-            "cloudflared is not installed. Install it first (for example: `winget install Cloudflare.cloudflared`).",
-            "未检测到 cloudflared。请先安装（例如：`winget install Cloudflare.cloudflared`）。"
-        ),
-        _ => t!(
-            l,
-            "cloudflared is not installed in PATH.",
-            "PATH 中未检测到 cloudflared。"
-        ),
+            "📦 Installing cloudflared...",
+            "📦 正在安装 cloudflared..."
+        )
+        .bold()
+    );
+
+    match std::env::consts::OS {
+        "linux" => install_cloudflared_linux(),
+        "macos" => install_cloudflared_macos(),
+        "windows" => install_cloudflared_windows(),
+        other => Err(anyhow!(
+            "{} {other}",
+            t!(
+                l,
+                "Automatic installation is not supported on this platform:",
+                "不支持在此平台自动安装："
+            )
+        )),
+    }
+}
+
+/// Install cloudflared on Linux by downloading the official binary.
+fn install_cloudflared_linux() -> Result<()> {
+    let l = lang();
+    let arch = std::env::consts::ARCH;
+    let arch_suffix = match arch {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        "arm" => "arm",
+        _ => {
+            return Err(anyhow!(
+                "{} {arch}",
+                t!(
+                    l,
+                    "Unsupported architecture for automatic cloudflared installation:",
+                    "不支持自动安装 cloudflared 的架构："
+                )
+            ))
+        }
     };
 
-    Err(anyhow!("{hint}"))
+    let url = format!(
+        "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{arch_suffix}"
+    );
+    let install_path = "/usr/local/bin/cloudflared";
+
+    println!(
+        "  {} {} -> {}",
+        t!(l, "Downloading", "下载中"),
+        url,
+        install_path
+    );
+
+    // Download with curl (universally available on modern Linux)
+    let status = Command::new("sudo")
+        .args(["curl", "-fsSL", "-o", install_path, &url])
+        .status()
+        .context(t!(
+            l,
+            "failed to run curl. Is curl installed?",
+            "运行 curl 失败，是否已安装 curl？"
+        ))?;
+
+    if !status.success() {
+        return Err(anyhow!(t!(
+            l,
+            "Failed to download cloudflared binary.",
+            "下载 cloudflared 二进制文件失败。"
+        )));
+    }
+
+    // Make executable
+    let status = Command::new("sudo")
+        .args(["chmod", "+x", install_path])
+        .status()
+        .context("chmod failed")?;
+
+    if !status.success() {
+        return Err(anyhow!(t!(
+            l,
+            "Failed to set executable permission on cloudflared.",
+            "设置 cloudflared 可执行权限失败。"
+        )));
+    }
+
+    println!(
+        "  {} {}",
+        "✅".green(),
+        t!(
+            l,
+            "cloudflared binary installed to /usr/local/bin/cloudflared",
+            "cloudflared 已安装到 /usr/local/bin/cloudflared"
+        )
+    );
+
+    Ok(())
+}
+
+/// Install cloudflared on macOS via Homebrew (preferred) or direct download.
+fn install_cloudflared_macos() -> Result<()> {
+    let l = lang();
+
+    if brew_installed() {
+        println!(
+            "  {}",
+            t!(
+                l,
+                "Installing via Homebrew...",
+                "通过 Homebrew 安装中..."
+            )
+        );
+        let status = Command::new("brew")
+            .args(["install", "cloudflared"])
+            .status()
+            .context("failed to run brew")?;
+
+        if !status.success() {
+            return Err(anyhow!(t!(
+                l,
+                "Homebrew installation of cloudflared failed.",
+                "通过 Homebrew 安装 cloudflared 失败。"
+            )));
+        }
+        return Ok(());
+    }
+
+    // Fallback: direct binary download
+    let arch = std::env::consts::ARCH;
+    let arch_suffix = match arch {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        _ => {
+            return Err(anyhow!(
+                "{} {arch}. {}",
+                t!(
+                    l,
+                    "Unsupported architecture:",
+                    "不支持的架构："
+                ),
+                t!(
+                    l,
+                    "Please install Homebrew first, then run: brew install cloudflared",
+                    "请先安装 Homebrew，再执行：brew install cloudflared"
+                )
+            ))
+        }
+    };
+
+    let url = format!(
+        "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-{arch_suffix}.tgz"
+    );
+    let tmp_dir = std::env::temp_dir().join("cloudflared-install");
+    let tmp_dir_str = tmp_dir.display().to_string();
+    let install_path = "/usr/local/bin/cloudflared";
+
+    println!(
+        "  {} {}",
+        t!(l, "Downloading", "下载中"),
+        url
+    );
+
+    // Create temp dir, download, extract
+    let _ = std::fs::create_dir_all(&tmp_dir);
+
+    let status = Command::new("curl")
+        .args(["-fsSL", "-o"])
+        .arg(tmp_dir.join("cloudflared.tgz").display().to_string())
+        .arg(&url)
+        .status()
+        .context("failed to run curl")?;
+
+    if !status.success() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(anyhow!(t!(
+            l,
+            "Failed to download cloudflared.",
+            "下载 cloudflared 失败。"
+        )));
+    }
+
+    let status = Command::new("tar")
+        .args(["-xzf"])
+        .arg(tmp_dir.join("cloudflared.tgz").display().to_string())
+        .arg("-C")
+        .arg(&tmp_dir_str)
+        .status()
+        .context("failed to extract archive")?;
+
+    if !status.success() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(anyhow!(t!(
+            l,
+            "Failed to extract cloudflared archive.",
+            "解压 cloudflared 归档文件失败。"
+        )));
+    }
+
+    let status = Command::new("sudo")
+        .arg("cp")
+        .arg(tmp_dir.join("cloudflared").display().to_string())
+        .arg(install_path)
+        .status()
+        .context("failed to copy binary")?;
+
+    if !status.success() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(anyhow!(t!(
+            l,
+            "Failed to install cloudflared to /usr/local/bin.",
+            "安装 cloudflared 到 /usr/local/bin 失败。"
+        )));
+    }
+
+    let _ = Command::new("sudo")
+        .args(["chmod", "+x", install_path])
+        .status();
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+
+    println!(
+        "  {} {}",
+        "✅".green(),
+        t!(
+            l,
+            "cloudflared binary installed to /usr/local/bin/cloudflared",
+            "cloudflared 已安装到 /usr/local/bin/cloudflared"
+        )
+    );
+
+    Ok(())
+}
+
+/// Install cloudflared on Windows via winget.
+fn install_cloudflared_windows() -> Result<()> {
+    let l = lang();
+    println!(
+        "  {}",
+        t!(
+            l,
+            "Installing via winget...",
+            "通过 winget 安装中..."
+        )
+    );
+
+    let status = Command::new("winget")
+        .args(["install", "--id", "Cloudflare.cloudflared", "--accept-source-agreements", "--accept-package-agreements"])
+        .status()
+        .context(t!(
+            l,
+            "failed to run winget. Is winget available?",
+            "运行 winget 失败，是否已安装 winget？"
+        ))?;
+
+    if !status.success() {
+        return Err(anyhow!(t!(
+            l,
+            "winget installation of cloudflared failed. You can also download manually from https://github.com/cloudflare/cloudflared/releases",
+            "通过 winget 安装 cloudflared 失败。也可以从 https://github.com/cloudflare/cloudflared/releases 手动下载。"
+        )));
+    }
+
+    Ok(())
 }
 
 fn print_package_maintenance_hint() {
