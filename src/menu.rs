@@ -95,7 +95,7 @@ pub async fn run_config_set_wizard() -> Result<()> {
 
 fn print_banner() {
     println!("\n{}", "═".repeat(60).cyan());
-    println!("{}", "  🌩️  openTunnel v0.1.0".bold().cyan());
+    println!("{}", "  🌩️  openTunnel v0.1.4".bold().cyan());
     println!("{}", "═".repeat(60).cyan());
 }
 
