@@ -100,6 +100,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
+      - name: Checkout (for tags/history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -119,9 +124,33 @@ jobs:
           cd release
           sha256sum * > SHA256SUMS
 
+      - name: Generate release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          PREV_TAG="$(git tag --sort=version:refname | grep -v "^${TAG}$" | tail -n1 || true)"
+
+          {
+            echo "# ${TAG}"
+            echo
+            if [[ -n "${PREV_TAG}" ]]; then
+              echo "## Changes since ${PREV_TAG}"
+              echo
+              git log --no-merges --pretty=format:"- %s (%h)" "${PREV_TAG}..${TAG}"
+              echo
+              echo
+              echo "Full Changelog: https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${TAG}"
+            else
+              echo "## Changes"
+              echo
+              git log --no-merges --pretty=format:"- %s (%h)" "${TAG}"
+            fi
+          } > release/RELEASE_NOTES.md
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             release/*
-          generate_release_notes: true
+          body_path: release/RELEASE_NOTES.md
