@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Shell completions support (`tunnel completions bash|zsh|fish|elvish|powershell`)
+- TUI Dashboard (`tunnel dashboard` or via menu)
+  - Real-time metrics display with ratatui
+  - Request/stream/error history sparklines
+  - Connection status indicator
+  - Help popup with keybindings
+  - Auto-refresh every 2 seconds
 
 ## [0.1.8] - 2026-02-22
 

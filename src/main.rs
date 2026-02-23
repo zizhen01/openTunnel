@@ -2,6 +2,7 @@ mod access;
 mod cli;
 mod client;
 mod config;
+mod dashboard;
 mod dns;
 mod error;
 mod i18n;
@@ -220,6 +221,9 @@ async fn run(cli: Cli) -> Result<()> {
             generate(shell, &mut cmd, name, &mut std::io::stdout());
             Ok(())
         }
+
+        // TUI Dashboard
+        Some(Commands::Dashboard) => dashboard::run_dashboard().await,
     }
 }
 

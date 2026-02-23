@@ -322,7 +322,8 @@ async fn monitoring_scan_menu() -> Result<()> {
     let l = lang();
     let options = vec![
         t!(l, "📊 Tunnel statistics", "📊 隧道统计"),
-        t!(l, "📈 Real-time monitor", "📈 实时监控"),
+        t!(l, "📈 Real-time monitor (TUI)", "📈 实时监控 (TUI)"),
+        t!(l, "📺 TUI Dashboard", "📺 TUI 仪表盘"),
         t!(l, "🔍 Scan local services", "🔍 扫描本地服务"),
         t!(l, "◀️  Back", "◀️  返回主菜单"),
     ];
@@ -332,8 +333,9 @@ async fn monitoring_scan_menu() -> Result<()> {
     match sel {
         Some(0) => monitor::show_stats().await?,
         Some(1) => monitor::real_time_monitor().await?,
-        Some(2) => scan::scan_local_services(None, 500).await?,
-        Some(3) | None => {}
+        Some(2) => crate::dashboard::run_dashboard().await?,
+        Some(3) => scan::scan_local_services(None, 500).await?,
+        Some(4) | None => {}
         _ => {}
     }
     Ok(())

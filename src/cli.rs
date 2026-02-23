@@ -102,6 +102,9 @@ pub enum Commands {
         action: ServiceAction,
     },
 
+    /// Interactive TUI dashboard / 交互式 TUI 仪表盘
+    Dashboard,
+
     /// Generate shell completions / 生成 Shell 补全脚本
     Completions {
         /// Shell: bash, zsh, fish, elvish, powershell
