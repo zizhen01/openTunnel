@@ -171,6 +171,24 @@ ci: add GitHub Actions workflow for clippy + test
 i18n: add English translations for tunnel menu
 ```
 
+### Commit ↔ Linear Task Mapping (REQUIRED)
+
+**Every commit MUST correspond to exactly one Linear task.**
+
+- Include the Linear task ID in the commit message footer:
+  ```
+  feat(dns): add DNS record deletion support
+
+  - Implement delete_record() in client.rs
+  - Add CLI command `dns delete`
+
+  Fixes PLO-12
+  ```
+- Branch naming: `feat/PLO-12-dns-delete` or `fix/PLO-34-unwrap-handling`
+- If a commit doesn't have a corresponding Linear task, create one first
+- Never combine multiple unrelated changes in a single commit
+- Never commit without a Linear task reference
+
 ### Pull Request Checklist
 
 - [ ] `cargo fmt` — no formatting issues
@@ -181,6 +199,7 @@ i18n: add English translations for tunnel menu
 - [ ] New public APIs have doc comments
 - [ ] README updated if user-facing behavior changed
 - [ ] No hardcoded paths that break cross-platform (use `dirs` crate for home directory)
+- [ ] **Every commit references a Linear task ID** (e.g., `Fixes PLO-34`)
 
 ---
 
