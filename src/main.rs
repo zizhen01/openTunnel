@@ -210,6 +210,16 @@ async fn run(cli: Cli) -> Result<()> {
             ServiceAction::Restart => service::restart(),
             ServiceAction::Logs { lines } => service::logs(lines),
         },
+
+        // Shell completions
+        Some(Commands::Completions { shell }) => {
+            use clap::CommandFactory;
+            use clap_complete::generate;
+            let mut cmd = Cli::command();
+            let name = cmd.get_name().to_string();
+            generate(shell, &mut cmd, name, &mut std::io::stdout());
+            Ok(())
+        }
     }
 }
 

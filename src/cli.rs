@@ -1,4 +1,5 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 
 #[derive(Parser)]
 #[command(
@@ -99,6 +100,13 @@ pub enum Commands {
     Service {
         #[command(subcommand)]
         action: ServiceAction,
+    },
+
+    /// Generate shell completions / 生成 Shell 补全脚本
+    Completions {
+        /// Shell: bash, zsh, fish, elvish, powershell
+        #[arg(value_enum)]
+        shell: Shell,
     },
 }
 

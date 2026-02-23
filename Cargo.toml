@@ -12,6 +12,9 @@ repository = "https://github.com/user/openTunnel"
 version = "4"
 features = ["derive"]
 
+[dependencies.clap_complete]
+version = "4"
+
 [dependencies.dialoguer]
 version = "0.11"
 

@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Code quality audit: no `.unwrap()`, `.expect()`, `panic!`, or `unreachable!` found
 - All error handling properly uses `anyhow::Result` with `?` operator and `.context()`
 
+### Added
+- Shell completions support (`tunnel completions bash|zsh|fish|elvish|powershell`)
+
 ## [0.1.8] - 2026-02-22
 
 ### Added
