@@ -262,6 +262,7 @@ async fn dns_menu() -> Result<()> {
         t!(l, "➕ Add DNS record", "➕ 添加 DNS 记录"),
         t!(l, "🗑️  Delete DNS record", "🗑️  删除 DNS 记录"),
         t!(l, "🔄 Sync tunnel routes", "🔄 同步隧道路由"),
+        t!(l, "🔒 Zone Settings (HTTPS, etc.)", "🔒 域名设置 (强制 HTTPS 等)"),
         t!(l, "◀️  Back", "◀️  返回主菜单"),
     ];
 
@@ -272,7 +273,8 @@ async fn dns_menu() -> Result<()> {
         Some(1) => dns::add_record(&client, None, None, None, true).await?,
         Some(2) => dns::delete_record(&client, None).await?,
         Some(3) => dns::sync_tunnel_routes(&client, None).await?,
-        Some(4) | None => {}
+        Some(4) => dns::zone_settings_menu(&client).await?,
+        Some(5) | None => {}
         _ => {}
     }
     Ok(())
@@ -420,12 +422,51 @@ async fn set_api_token() -> Result<()> {
     println!("   2. {} 'Create Token'", t!(l, "Click", "点击"));
     println!("   3. {}:", t!(l, "Required permissions", "所需权限"));
     println!("      • Account - Cloudflare Tunnel: Edit");
+    println!("      • Account - Account Settings: Edit");
     println!("      • Zone - DNS: Edit");
     println!("      • Account - Access: Edit");
+    println!("      • Account - Zero Trust: Edit");
     println!();
 
-    let token = match prompt::secret_input_opt("API Token", false) {
-        Some(v) => v,
+    // Network connectivity check before any API calls
+    print!(
+        "{}",
+        t!(
+            l,
+            "🌐 Checking network connectivity...",
+            "🌐 检查网络连通性..."
+        )
+    );
+    match CloudflareClient::check_network().await {
+        Ok(_) => println!(" {}", "✅".green()),
+        Err(e) => {
+            println!(" {}", "❌".red());
+            println!(
+                "\n{} {}",
+                "❌".red(),
+                t!(
+                    l,
+                    "Network error: cannot reach Cloudflare API.",
+                    "网络错误：无法连接 Cloudflare API。"
+                )
+            );
+            println!("   {}", e);
+            println!(
+                "{}",
+                t!(
+                    l,
+                    "Please check your internet connection and try again.",
+                    "请检查您的网络连接后重试。"
+                )
+                .yellow()
+            );
+            return Ok(());
+        }
+    }
+    println!();
+
+    let token = match prompt::input_opt("API Token", false, None) {
+        Some(v) => v.trim().to_string(),
         None => return Ok(()),
     };
     if token.is_empty() {
@@ -460,8 +501,8 @@ async fn set_api_token() -> Result<()> {
             "{}",
             t!(
                 l,
-                "Tip: ensure the token has 'Account - Account: Read' permission.",
-                "提示：请确认 Token 包含 'Account - Account: Read' 权限。"
+                "Tip: ensure the token has 'Account - Account Settings: Edit' permission.",
+                "提示：请确认 Token 包含 'Account - Account Settings: Edit' 权限。"
             )
             .yellow()
         );
@@ -483,10 +524,11 @@ async fn set_api_token() -> Result<()> {
         TokenVerifyStatus::Valid => {
             println!("  {} {}", "✅".green(), t!(l, "Token valid", "Token 有效"))
         }
-        TokenVerifyStatus::Invalid => println!(
-            "  {} {}",
+        TokenVerifyStatus::Invalid(ref reason) => println!(
+            "  {} {} — {}",
             "❌".red(),
-            t!(l, "Token invalid or expired", "Token 无效或已过期")
+            t!(l, "Token invalid or expired", "Token 无效或已过期"),
+            reason
         ),
         TokenVerifyStatus::Unknown => println!(
             "  {} {}",
@@ -551,6 +593,21 @@ async fn set_api_token() -> Result<()> {
             zone_err = Some(e);
             Vec::new()
         }
+    };
+
+    // Fall back: extract account from zone response if accounts API returned nothing
+    let account_id = if account_id.is_none() {
+        zones.first().and_then(|z| z.account.as_ref()).map(|a| {
+            println!(
+                "📋 {} '{}' ({})",
+                t!(l, "Account (from zone):", "账户 (从域名获取):"),
+                a.name,
+                a.id
+            );
+            a.id.clone()
+        })
+    } else {
+        account_id
     };
 
     println!(); // blank line after permission checks
@@ -693,10 +750,11 @@ async fn test_api_connection() -> Result<()> {
         TokenVerifyStatus::Valid => {
             println!("  {} {}", "✅".green(), t!(l, "Token valid", "Token 有效"))
         }
-        TokenVerifyStatus::Invalid => println!(
-            "  {} {}",
+        TokenVerifyStatus::Invalid(ref reason) => println!(
+            "  {} {} — {}",
             "❌".red(),
-            t!(l, "Token invalid or expired", "Token 无效或已过期")
+            t!(l, "Token invalid or expired", "Token 无效或已过期"),
+            reason
         ),
         TokenVerifyStatus::Unknown => println!(
             "  {} {}",

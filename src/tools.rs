@@ -165,7 +165,7 @@ pub async fn health_check() -> Result<()> {
             crate::client::CloudflareClient::verify_token(token, cfg.account_id.as_deref()).await;
         let (status, detail) = match verify {
             Ok(crate::client::TokenVerifyStatus::Valid) => ("✅", t!(l, "valid", "有效")),
-            Ok(crate::client::TokenVerifyStatus::Invalid) => {
+            Ok(crate::client::TokenVerifyStatus::Invalid(_)) => {
                 ("❌", t!(l, "invalid or expired", "无效或已过期"))
             }
             _ => ("⚠️", t!(l, "inconclusive", "不确定")),

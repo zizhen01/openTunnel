@@ -1,7 +1,7 @@
 use colored::Colorize;
 use comfy_table::{presets::UTF8_FULL, Table};
 
-use crate::client::{CloudflareClient, CreateDnsRecord};
+use crate::client::{CloudflareClient, CreateDnsRecord, ZoneSetting};
 use crate::error::Result;
 use crate::i18n::lang;
 use crate::prompt;
@@ -333,5 +333,84 @@ pub async fn sync_tunnel_routes(
         skipped,
         t!(l, "skipped", "已跳过")
     );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Zone settings (Always Use HTTPS, etc.)
+// ---------------------------------------------------------------------------
+
+/// Interactive menu to view and toggle zone settings.
+pub async fn zone_settings_menu(client: &CloudflareClient) -> Result<()> {
+    let l = lang();
+
+    // Fetch current state of "always_use_https"
+    let setting = match client.get_zone_setting("always_use_https").await {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} {}: {}", "❌".red(), t!(l, "Failed to fetch zone settings", "获取域名设置失败"), e);
+            return Ok(());
+        }
+    };
+
+    let current_on = setting.value.as_str() == Some("on");
+    let status_str = if current_on {
+        t!(l, "ON", "已开启").green().to_string()
+    } else {
+        t!(l, "OFF", "已关闭").red().to_string()
+    };
+
+    println!(
+        "\n{}",
+        t!(l, "🔒 Zone Settings", "🔒 域名设置").bold()
+    );
+    println!(
+        "  ├─ {}: {}",
+        t!(l, "Always Use HTTPS", "强制 HTTPS"),
+        status_str
+    );
+    println!();
+
+    let toggle_label = if current_on {
+        t!(l, "Turn OFF (allow HTTP)", "关闭强制 HTTPS (允许 HTTP)")
+    } else {
+        t!(l, "Turn ON (redirect HTTP → HTTPS)", "开启强制 HTTPS (HTTP 自动跳转 HTTPS)")
+    };
+
+    let options = vec![
+        toggle_label,
+        t!(l, "◀️  Back", "◀️  返回"),
+    ];
+
+    let sel = prompt::select_opt(t!(l, "Zone Settings", "域名设置"), &options, None);
+
+    if sel != Some(0) {
+        return Ok(());
+    }
+
+    let new_value = if current_on { "off" } else { "on" };
+    match client
+        .patch_zone_setting("always_use_https", serde_json::json!(new_value))
+        .await
+    {
+        Ok(ZoneSetting { value, .. }) => {
+            let v = value.as_str().unwrap_or(new_value);
+            let label = if v == "on" {
+                t!(l, "ON", "已开启").green().to_string()
+            } else {
+                t!(l, "OFF", "已关闭").red().to_string()
+            };
+            println!(
+                "{} {} {}",
+                "✅".green(),
+                t!(l, "Always Use HTTPS is now", "强制 HTTPS 已设置为"),
+                label
+            );
+        }
+        Err(e) => {
+            println!("{} {}: {}", "❌".red(), t!(l, "Failed to update setting", "更新设置失败"), e);
+        }
+    }
+
     Ok(())
 }

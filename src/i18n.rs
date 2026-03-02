@@ -115,4 +115,40 @@ mod tests {
         set_lang(Lang::En);
         assert_eq!(lang(), Lang::En);
     }
+
+    #[test]
+    fn parse_lang_case_insensitive() {
+        assert_eq!(parse_lang("EN"), Some(Lang::En));
+        assert_eq!(parse_lang("ZH"), Some(Lang::Zh));
+        assert_eq!(parse_lang("Chinese"), Some(Lang::Zh));
+        assert_eq!(parse_lang("ENGLISH"), Some(Lang::En));
+    }
+
+    #[test]
+    fn parse_lang_empty_and_unknown_return_none() {
+        assert_eq!(parse_lang(""), None);
+        assert_eq!(parse_lang("jp"), None);
+        assert_eq!(parse_lang("de"), None);
+    }
+
+    #[test]
+    fn init_lang_cli_flag_overrides_config() {
+        init_lang(Some("zh"), Some("en"));
+        assert_eq!(lang(), Lang::Zh);
+        set_lang(Lang::En); // reset global state
+    }
+
+    #[test]
+    fn init_lang_falls_back_to_config() {
+        init_lang(None, Some("zh"));
+        assert_eq!(lang(), Lang::Zh);
+        set_lang(Lang::En); // reset global state
+    }
+
+    #[test]
+    fn init_lang_invalid_flag_uses_config() {
+        init_lang(Some("invalid"), Some("zh"));
+        assert_eq!(lang(), Lang::Zh);
+        set_lang(Lang::En); // reset global state
+    }
 }

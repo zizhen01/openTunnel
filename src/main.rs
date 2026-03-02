@@ -152,11 +152,12 @@ async fn run(cli: Cli) -> Result<()> {
                             t!(l, "API connection successful.", "API 连接正常。")
                         );
                     }
-                    client::TokenVerifyStatus::Invalid => {
+                    client::TokenVerifyStatus::Invalid(ref reason) => {
                         println!(
-                            "{} {}",
+                            "{} {} — {}",
                             "❌".red(),
-                            t!(l, "API connection failed.", "API 连接失败。")
+                            t!(l, "API connection failed.", "API 连接失败。"),
+                            reason
                         );
                     }
                     client::TokenVerifyStatus::Unknown => {

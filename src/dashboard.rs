@@ -7,12 +7,12 @@ use ratatui::{
     },
     layout::{Alignment, Constraint, Direction, Layout, Margin},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, Clear, Gauge, Paragraph, Row, Sparkline, Table},
+    widgets::{Block, Borders, Clear, Paragraph, Sparkline},
     Frame, Terminal,
 };
 use std::io::{self, stdout};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
 use tokio::time::interval;
 
@@ -104,7 +104,7 @@ pub async fn run_dashboard() -> Result<()> {
 
     // Initial data fetch
     {
-        let mut app = app.lock().unwrap();
+        let mut app = app.lock().await;
         app.update().await;
     }
 
@@ -114,7 +114,7 @@ pub async fn run_dashboard() -> Result<()> {
         let mut ticker = interval(Duration::from_secs(2));
         loop {
             ticker.tick().await;
-            let mut app = app_clone.lock().unwrap();
+            let mut app = app_clone.lock().await;
             if app.quit {
                 break;
             }
@@ -142,7 +142,7 @@ async fn run_ui_loop(
     loop {
         // Draw
         {
-            let app = app.lock().unwrap();
+            let app = app.lock().await;
             if app.quit {
                 break;
             }
@@ -154,7 +154,7 @@ async fn run_ui_loop(
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    let mut app = app.lock().unwrap();
+                    let mut app = app.lock().await;
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => app.quit = true,
                         KeyCode::Char('h') | KeyCode::Char('?') => app.show_help = !app.show_help,

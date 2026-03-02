@@ -120,3 +120,30 @@ pub async fn scan_local_services(extra_ports: Option<String>, timeout_ms: u64) -
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_ports_no_duplicates() {
+        let mut seen = std::collections::HashSet::new();
+        for &(port, _, _) in DEFAULT_PORTS {
+            assert!(seen.insert(port), "duplicate port: {port}");
+        }
+    }
+
+    #[test]
+    fn default_ports_descriptions_nonempty() {
+        for &(port, en_desc, _) in DEFAULT_PORTS {
+            assert!(!en_desc.is_empty(), "empty description for port {port}");
+        }
+    }
+
+    #[test]
+    fn default_ports_valid_range() {
+        for &(port, _, _) in DEFAULT_PORTS {
+            assert!(port > 0, "port must be > 0");
+        }
+    }
+}

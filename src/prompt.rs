@@ -1,29 +1,43 @@
-use dialoguer::{theme::ColorfulTheme, Confirm, Input, Password, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 
 /// Show a selection list and return the selected index.
-/// Returns `None` when cancelled or when interaction fails.
+/// Appends a "← Back (ESC)" item; returns `None` when that item is chosen or ESC is pressed.
 pub fn select_opt<T: ToString>(prompt: &str, items: &[T], default: Option<usize>) -> Option<usize> {
     let theme = ColorfulTheme::default();
-    let mut select = Select::with_theme(&theme).with_prompt(prompt).items(items);
+    let mut all: Vec<String> = items.iter().map(|i| i.to_string()).collect();
+    all.push("← Back (ESC)".to_string());
+    let back_idx = all.len() - 1;
+
+    let mut select = Select::with_theme(&theme).with_prompt(prompt).items(&all);
     if let Some(d) = default {
         select = select.default(d);
     }
-    select.interact_opt().ok().flatten()
+    match select.interact_opt().ok().flatten() {
+        Some(i) if i == back_idx => None,
+        other => other,
+    }
 }
 
 /// Show a selection list and return the selected index.
-/// Returns an error only when terminal interaction fails.
+/// Appends a "← Back (ESC)" item; returns `Ok(None)` when that item is chosen or ESC is pressed.
 pub fn select_opt_result<T: ToString>(
     prompt: &str,
     items: &[T],
     default: Option<usize>,
 ) -> anyhow::Result<Option<usize>> {
     let theme = ColorfulTheme::default();
-    let mut select = Select::with_theme(&theme).with_prompt(prompt).items(items);
+    let mut all: Vec<String> = items.iter().map(|i| i.to_string()).collect();
+    all.push("← Back (ESC)".to_string());
+    let back_idx = all.len() - 1;
+
+    let mut select = Select::with_theme(&theme).with_prompt(prompt).items(&all);
     if let Some(d) = default {
         select = select.default(d);
     }
-    Ok(select.interact_opt()?)
+    Ok(match select.interact_opt()? {
+        Some(i) if i == back_idx => None,
+        other => other,
+    })
 }
 
 /// Show a confirmation prompt.
@@ -57,15 +71,4 @@ pub fn pause(prompt: &str) {
     print!("{}", prompt);
     let _ = io::stdout().flush();
     let _ = io::stdin().read_line(&mut String::new());
-}
-
-/// Show a hidden text input prompt (for secrets like API tokens).
-/// Returns `None` when cancelled or on interaction failure.
-pub fn secret_input_opt(prompt: &str, allow_empty: bool) -> Option<String> {
-    let theme = ColorfulTheme::default();
-    let mut input = Password::with_theme(&theme).with_prompt(prompt);
-    if allow_empty {
-        input = input.allow_empty_password(true);
-    }
-    input.interact().ok()
 }

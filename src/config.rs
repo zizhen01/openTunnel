@@ -178,4 +178,47 @@ mod tests {
         let cfg = ApiConfig::default();
         assert_eq!(cfg.masked_token(), "not set");
     }
+
+    #[test]
+    fn masked_token_exactly_8_chars_treated_as_short() {
+        let cfg = ApiConfig {
+            api_token: Some("12345678".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(cfg.masked_token(), "****");
+    }
+
+    #[test]
+    fn masked_token_exactly_9_chars_gets_masked() {
+        let cfg = ApiConfig {
+            api_token: Some("123456789".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(cfg.masked_token(), "1234***...***6789");
+    }
+
+    #[test]
+    fn api_config_serializes_omitting_none_fields() {
+        let cfg = ApiConfig::default();
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert_eq!(json, "{}");
+    }
+
+    #[test]
+    fn api_config_round_trips_through_json() {
+        let cfg = ApiConfig {
+            api_token: Some("tok".to_string()),
+            account_id: Some("acc".to_string()),
+            zone_id: Some("zone".to_string()),
+            zone_name: Some("example.com".to_string()),
+            language: Some("en".to_string()),
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let parsed: ApiConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.api_token, cfg.api_token);
+        assert_eq!(parsed.account_id, cfg.account_id);
+        assert_eq!(parsed.zone_id, cfg.zone_id);
+        assert_eq!(parsed.zone_name, cfg.zone_name);
+        assert_eq!(parsed.language, cfg.language);
+    }
 }

@@ -146,8 +146,11 @@ pub struct AccessPolicy {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PolicyRule {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<PolicyEmail>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub email_domain: Option<PolicyEmailDomain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub everyone: Option<serde_json::Value>,
 }
 
@@ -161,12 +164,26 @@ pub struct PolicyEmailDomain {
     pub domain: String,
 }
 
+/// A Cloudflare zone setting (e.g. always_use_https).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ZoneSetting {
+    pub id: String,
+    pub value: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ZoneAccount {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct Zone {
     pub id: String,
     pub name: String,
     pub status: Option<String>,
+    pub account: Option<ZoneAccount>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -176,10 +193,11 @@ pub struct Account {
 }
 
 /// Token verification outcome.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenVerifyStatus {
     Valid,
-    Invalid,
+    /// Token is definitively invalid; carries the Cloudflare error message.
+    Invalid(String),
     Unknown,
 }
 
@@ -258,6 +276,17 @@ impl CloudflareClient {
         self.parse_response(resp).await
     }
 
+    async fn patch<T: DeserializeOwned, B: Serialize>(&self, url: &str, body: &B) -> Result<T> {
+        let resp = self
+            .http
+            .patch(url)
+            .json(body)
+            .send()
+            .await
+            .context("HTTP PATCH failed")?;
+        self.parse_response(resp).await
+    }
+
     async fn delete_req<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
         let resp = self
             .http
@@ -302,13 +331,27 @@ impl CloudflareClient {
 
     // -- Token verification -------------------------------------------------
 
+    /// Check basic network connectivity to the Cloudflare API.
+    /// Returns Ok(()) if reachable, Err with a human-readable description if not.
+    pub async fn check_network() -> Result<()> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()?;
+        client
+            .get("https://cloudflare.com")
+            .send()
+            .await
+            .context("Cannot reach Cloudflare (network unreachable)")?;
+        Ok(())
+    }
+
     /// Verify the current API token is valid.
     pub async fn verify_token(token: &str, _account_id: Option<&str>) -> Result<TokenVerifyStatus> {
         let client = reqwest::Client::new();
         let url = format!("{BASE_URL}/user/tokens/verify");
         let resp = match client
             .get(url)
-            .header("Authorization", format!("Bearer {token}"))
+            .bearer_auth(token)
             .send()
             .await
         {
@@ -343,7 +386,12 @@ impl CloudflareClient {
             }
 
             if err_text.contains("invalid") || err_text.contains("expired") {
-                return Ok(TokenVerifyStatus::Invalid);
+                let reason = cf
+                    .errors
+                    .first()
+                    .map(|e| format!("{} (code {})", e.message, e.code))
+                    .unwrap_or_else(|| "token invalid or expired".to_string());
+                return Ok(TokenVerifyStatus::Invalid(reason));
             }
 
             return Ok(TokenVerifyStatus::Unknown);
@@ -357,12 +405,20 @@ impl CloudflareClient {
         let client = reqwest::Client::new();
         let resp = client
             .get(format!("{BASE_URL}/accounts"))
-            .header("Authorization", format!("Bearer {token}"))
+            .bearer_auth(token)
             .send()
             .await
             .context("failed to fetch accounts")?;
         let body = resp.text().await?;
         let cf: CfResponse<Vec<Account>> = serde_json::from_str(&body)?;
+        if !cf.success {
+            let msg = cf
+                .errors
+                .first()
+                .map(|e| format!("{} (code {})", e.message, e.code))
+                .unwrap_or_else(|| "unknown error".to_string());
+            bail!("Cloudflare API error: {msg}");
+        }
         Ok(cf.result.unwrap_or_default())
     }
 
@@ -371,12 +427,20 @@ impl CloudflareClient {
         let client = reqwest::Client::new();
         let resp = client
             .get(format!("{BASE_URL}/zones"))
-            .header("Authorization", format!("Bearer {token}"))
+            .bearer_auth(token)
             .send()
             .await
             .context("failed to fetch zones")?;
         let body = resp.text().await?;
         let cf: CfResponse<Vec<Zone>> = serde_json::from_str(&body)?;
+        if !cf.success {
+            let msg = cf
+                .errors
+                .first()
+                .map(|e| format!("{} (code {})", e.message, e.code))
+                .unwrap_or_else(|| "unknown error".to_string());
+            bail!("Cloudflare API error: {msg}");
+        }
         Ok(cf.result.unwrap_or_default())
     }
 
@@ -535,5 +599,20 @@ impl CloudflareClient {
             self.account_id
         );
         self.post(&url, policy).await
+    }
+
+    /// Get a zone setting by name (e.g. "always_use_https").
+    pub async fn get_zone_setting(&self, setting: &str) -> Result<ZoneSetting> {
+        let zone_id = self.require_zone_id()?;
+        let url = format!("{BASE_URL}/zones/{zone_id}/settings/{setting}");
+        self.get(&url).await
+    }
+
+    /// Patch a zone setting. `value` should be `"on"` or `"off"` for boolean settings.
+    pub async fn patch_zone_setting(&self, setting: &str, value: serde_json::Value) -> Result<ZoneSetting> {
+        let zone_id = self.require_zone_id()?;
+        let url = format!("{BASE_URL}/zones/{zone_id}/settings/{setting}");
+        let body = serde_json::json!({ "value": value });
+        self.patch(&url, &body).await
     }
 }

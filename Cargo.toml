@@ -1,11 +1,16 @@
 [package]
 name = "opentunnel"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 authors = ["openTunnel Contributors"]
 description = "An open-source CLI for managing Cloudflare Tunnels, DNS, Zero Trust Access & monitoring"
 license = "MIT"
-repository = "https://github.com/user/openTunnel"
+repository = "https://github.com/zizhen01/openTunnel"
+homepage = "https://github.com/zizhen01/openTunnel"
+documentation = "https://github.com/zizhen01/openTunnel#readme"
+keywords = ["cloudflare", "tunnel", "dns", "cli", "zero-trust"]
+categories = ["command-line-utilities", "network-programming"]
+exclude = ["*.bak", "tatus", ".claude/", "AGENTS.md"]
 
 # CLI framework
 [dependencies.clap]

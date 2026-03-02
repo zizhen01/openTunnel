@@ -7,24 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- MIT LICENSE file
-- CHANGELOG.md (this file)
-- CONTRIBUTING.md (bilingual: English and Chinese)
-- GitHub Issue and PR templates
-
-### Verified
-- Code quality audit: no `.unwrap()`, `.expect()`, `panic!`, or `unreachable!` found
-- All error handling properly uses `anyhow::Result` with `?` operator and `.context()`
+## [0.1.9] - 2026-03-02
 
 ### Added
+- Zone Settings menu under DNS Management: toggle "Always Use HTTPS" (HTTP → HTTPS redirect) via Cloudflare API
 - Shell completions support (`tunnel completions bash|zsh|fish|elvish|powershell`)
-- TUI Dashboard (`tunnel dashboard` or via menu)
-  - Real-time metrics display with ratatui
-  - Request/stream/error history sparklines
-  - Connection status indicator
-  - Help popup with keybindings
-  - Auto-refresh every 2 seconds
+- TUI Dashboard (`tunnel dashboard` or via menu) with real-time metrics, sparklines, and keybindings
+
+### Fixed
+- Access policy creation (code 12130): `PolicyRule` fields now omit `null` keys when serializing to JSON (`skip_serializing_if = "Option::is_none"`)
+
+### Changed
+- Removed `AGENTS.md` (AI agent instructions) from repository
+- Automated `cargo publish` on git tag via GitHub Actions
 
 ## [0.1.8] - 2026-02-22
 
@@ -53,7 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time monitoring
 - Bilingual support (English/Chinese)
 
-[unreleased]: https://github.com/user/openTunnel/compare/v0.1.8...HEAD
-[0.1.8]: https://github.com/user/openTunnel/compare/v0.1.4...v0.1.8
-[0.1.4]: https://github.com/user/openTunnel/compare/v0.1.0...v0.1.4
-[0.1.0]: https://github.com/user/openTunnel/releases/tag/v0.1.0
+[unreleased]: https://github.com/zizhen01/openTunnel/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/zizhen01/openTunnel/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/zizhen01/openTunnel/compare/v0.1.4...v0.1.8
+[0.1.4]: https://github.com/zizhen01/openTunnel/compare/v0.1.0...v0.1.4
+[0.1.0]: https://github.com/zizhen01/openTunnel/releases/tag/v0.1.0

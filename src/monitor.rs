@@ -202,7 +202,7 @@ fn print_metrics_unavailable_hint() {
 // Fetch & parse Prometheus metrics
 // ---------------------------------------------------------------------------
 
-async fn fetch_metrics() -> Result<TunnelMetrics> {
+pub async fn fetch_metrics() -> Result<TunnelMetrics> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()?;

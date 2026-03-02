@@ -22,3 +22,52 @@ pub enum CftError {
 
 /// Convenience alias used throughout the application.
 pub type Result<T> = anyhow::Result<T>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn api_not_configured_message() {
+        assert_eq!(
+            CftError::ApiNotConfigured.to_string(),
+            "API not configured. Run `tunnel config set` first."
+        );
+    }
+
+    #[test]
+    fn zone_not_configured_message() {
+        assert_eq!(
+            CftError::ZoneNotConfigured.to_string(),
+            "Zone ID not configured. Run `tunnel config set` first."
+        );
+    }
+
+    #[test]
+    fn cloudflare_api_error_message() {
+        let e = CftError::CloudflareApi {
+            code: 10000,
+            message: "Authentication error".to_string(),
+        };
+        assert_eq!(
+            e.to_string(),
+            "Cloudflare API error: Authentication error (code 10000)"
+        );
+    }
+
+    #[test]
+    fn cancelled_message() {
+        assert_eq!(
+            CftError::Cancelled.to_string(),
+            "User cancelled the operation"
+        );
+    }
+
+    #[test]
+    fn invalid_input_message() {
+        assert_eq!(
+            CftError::InvalidInput("bad value".to_string()).to_string(),
+            "Invalid input: bad value"
+        );
+    }
+}
